@@ -1,0 +1,46 @@
+[package]
+name = "flash-algo"
+version = "0.1.0"
+edition = "2021"
+license = "Proprietary Kelvin"
+authors = ["James Munns <james@onevariable.com>"]
+readme = "README.md"
+description = "Flash algorithm for the Cozy Motherboard 2023."
+repository = "https://github.com/Radiator-Labs/cozyboard_2023/tree/master/shared-sw-fw/flash-algo"
+keywords = [
+    "kelvin",
+    "kel.vin",
+    "radiator-labs",
+    "proprietary",
+    "no-std",
+    "embedded",
+    "flash-memory",
+]
+categories = ["Embedded development", "No standard library"]
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[features]
+# Enable a more robust forward error correction coverage approach.
+#
+# This MAY be incompatible with some other FEC implementations found in the wild.
+force-full-r = []
+
+# Enable standard library features. Typically used for testing/simulation.
+use-std = []
+defmt = ["dep:defmt"]
+
+[dependencies]
+crc = "3.0.1"
+defmt = { version = "0.3.6", optional = true }
+
+[dev-dependencies]
+insta = "1.31.0"
+tokio = { version = "1.32.0", features = [
+    "macros",
+    "test-util",
+    "rt",
+    "sync",
+    "rt-multi-thread",
+] }

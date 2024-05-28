@@ -1,0 +1,7 @@
+---
+source: flash-algo-test/tests/more_real.rs
+expression: blank_to_start
+---
+00000000 | 00 00 00 00 00 00 00 00 2D 00 00 00 49 02 00 00 
+...
+00040000 | 01 00 00 00 01 00 00 00 2D 00 00 00 00 40 00 00
