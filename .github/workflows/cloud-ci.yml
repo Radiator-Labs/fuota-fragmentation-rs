@@ -14,13 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Cloud-CI cozyboard_2023
+    - name: Cloud-CI fuota_fragmentation
       run: |
         rustup target add thumbv7em-none-eabi
         cargo install cargo-machete
         cargo build --release
         (cd flash-algo && cargo build --release --target thumbv7em-none-eabi)
-        cargo test
         cargo fmt --all -- --check
         cargo clippy
         cargo machete
+        cargo test
