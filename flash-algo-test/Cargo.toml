@@ -21,19 +21,22 @@ categories = ["Embedded development", "No standard library"]
 [badges]
 maintenance = { status = "actively-developed" }
 
-[dependencies]
-crc = "3.0.1"
-flash-algo = { path = "../flash-algo" }
-
-[dev-dependencies]
-insta = "1.31.0"
-
-[dev-dependencies.tokio]
-version = "1.32.0"
-features = ["macros", "test-util", "rt", "sync", "rt-multi-thread"]
-
 [features]
 # Enable a more robust forward error correction coverage approach.
 #
 # This MAY be incompatible with some other FEC implementations found in the wild.
-force-full-r = []
+force-full-r = ["flash-algo/force-full-r"]
+
+[dependencies]
+crc = "3.2.1"
+flash-algo = { path = "../flash-algo" }
+
+[dev-dependencies]
+insta = "1.39.0"
+tokio = { version = "1.38.0", features = [
+    "macros",
+    "test-util",
+    "rt",
+    "sync",
+    "rt-multi-thread",
+] }
