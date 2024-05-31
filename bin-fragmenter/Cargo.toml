@@ -1,8 +1,8 @@
 [package]
 name = "bin-fragmenter"
-version = "1.1.0"
+version = "0.1.0"
 edition = "2021"
-license = "Proprietary Kelvin"
+license = "MIT OR Apache-2.0"
 authors = [
     "James Munns <james@onevariable.com>",
     "Phil Markgraf <philip.markgraf@kel.vin>",
