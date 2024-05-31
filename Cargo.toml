@@ -1,4 +1,4 @@
 [workspace]
-members = ["flash-algo", "flash-algo-test"]
+members = ["bin-fragmenter", "flash-algo", "flash-algo-test"]
 exclude = []
 resolver = "2"
