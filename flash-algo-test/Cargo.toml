@@ -7,15 +7,7 @@ authors = ["James Munns <james@onevariable.com>"]
 readme = "README.md"
 description = "Flash algorithm for the Cozy Motherboard 2023."
 repository = "https://github.com/Radiator-Labs/cozyboard_2023/tree/master/shared-sw-fw/flash-algo-test"
-keywords = [
-    "kelvin",
-    "kel.vin",
-    "radiator-labs",
-    "proprietary",
-    "no-std",
-    "embedded",
-    "flash-memory",
-]
+keywords = ["no-std", "embedded", "flash-memory"]
 categories = ["Embedded development", "No standard library"]
 
 [badges]

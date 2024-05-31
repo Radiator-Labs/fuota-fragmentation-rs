@@ -10,14 +10,7 @@ authors = [
 readme = "README.md"
 description = "Application for fragmenting binaries in preparation for uploading using FUOTA messages."
 repository = "https://github.com/Radiator-Labs/fuota-fragmentation-rs/tree/master/bin-fragmenter"
-keywords = [
-    "fuota",
-    "kelvin",
-    "kel.vin",
-    "lora",
-    "radiator-labs",
-    "proprietary",
-]
+keywords = ["fuota", "lora"]
 categories = [
     "Command line utilities",
     "Development tools",
