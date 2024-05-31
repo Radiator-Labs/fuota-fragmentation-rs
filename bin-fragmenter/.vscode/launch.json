@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'debug-console'",
+            "name": "Debug unit tests in library 'bin-fragmenter'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=debug-console"
+                    "--package=bin-fragmenter"
                 ],
                 "filter": {
-                    "name": "debug-console",
+                    "name": "bin-fragmenter",
                     "kind": "lib"
                 }
             },
@@ -26,15 +26,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'debug-console'",
+            "name": "Debug executable 'bin-fragmenter'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=debug-console",
-                    "--package=debug-console"
+                    "--bin=bin-fragmenter",
+                    "--package=bin-fragmenter"
                 ],
                 "filter": {
-                    "name": "debug-console",
+                    "name": "bin-fragmenter",
                     "kind": "bin"
                 }
             },
@@ -44,16 +44,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'debug-console'",
+            "name": "Debug unit tests in executable 'bin-fragmenter'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=debug-console",
-                    "--package=debug-console"
+                    "--bin=bin-fragmenter",
+                    "--package=bin-fragmenter"
                 ],
                 "filter": {
-                    "name": "debug-console",
+                    "name": "bin-fragmenter",
                     "kind": "bin"
                 }
             },
