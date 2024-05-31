@@ -19,8 +19,10 @@ jobs:
         git lfs pull
         rustup target add thumbv7em-none-eabi
         cargo install cargo-machete
-        cargo build --release
-        (cd flash-algo && cargo build --release --target thumbv7em-none-eabi)
+        cargo build --release --no-default-features
+        cargo build --release --features force-full-r
+        (cd flash-algo && cargo build --release --target thumbv7em-none-eabi --no-default-features)
+        (cd flash-algo && cargo build --release --target thumbv7em-none-eabi --features force-full-r)
         cargo test --no-default-features
         cargo test --features force-full-r
         cargo fmt --all -- --check
