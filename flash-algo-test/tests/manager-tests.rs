@@ -17,8 +17,6 @@
 #[cfg(test)]
 mod test {
     use core::unreachable;
-    use insta::assert_snapshot;
-
     use flash_algo::{
         manager::{
             read_header_from_slot, ActiveStatus, AppBootStatus, OldestReport, ScratchRam,
@@ -30,14 +28,15 @@ mod test {
         },
         spi_flash::{SpiFlash, SpiFlashError},
     };
-    use flash_algo_test::protocol_test_support::make_a_slot;
+    use flash_algo_test::{heap_flash::Flash, protocol_test_support::make_a_slot};
+    use insta::assert_snapshot;
 
     #[tokio::test]
     async fn empty_flash() {
         const SLOT_SIZE: usize = 256 * 1024;
 
         let mut scratch = ScratchRam::new();
-        let mut flash = flash_algo_test::heap_flash::Flash::new(64 * 1024, 1024 * 1024);
+        let mut flash = Flash::new(64 * 1024, 1024 * 1024);
         let mut mgr = SlotManager::<4>::new(SLOT_SIZE);
 
         assert_eq!(
