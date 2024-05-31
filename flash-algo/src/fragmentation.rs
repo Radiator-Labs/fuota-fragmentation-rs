@@ -67,6 +67,14 @@ pub fn fragmentation_prbs23(x: u32) -> u32 {
 ///
 /// // The third parity frame is the resulting XOR of 1-indexed data segments:
 /// // `D1 ^ D2 ^ D3 ^ D9 ^ D11 ^ D13 ^ D14`.
+/// #[cfg(feature = "force-full-r")]
+/// assert_eq!(&app_vec, &[
+///     true, true, true, false,
+///     false, true, false, false,
+///     true, false, true, false,
+///     true, true, false, false,
+/// ]);
+/// #[cfg(not(feature = "force-full-r"))]
 /// assert_eq!(&app_vec, &[
 ///     true, true, true, false,
 ///     false, false, false, false,
