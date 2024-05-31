@@ -23,6 +23,6 @@ force-full-r = ["flash-algo/force-full-r"]
 [dependencies]
 clap = { version = "4.5.4", features = ["derive", "std"] }
 crc = "3.2.1"
-flash-algo = { path = "../flash-algo", features = ["defmt"] }
+flash-algo = { path = "../flash-algo" }
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
 serde_json = "1.0.117"
