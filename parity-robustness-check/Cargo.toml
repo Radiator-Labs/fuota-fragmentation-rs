@@ -1,0 +1,28 @@
+[package]
+name = "parity-robustness-check"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = [
+    "James Munns <james@onevariable.com>",
+    "Phil Markgraf <philip.markgraf@kel.vin>",
+]
+readme = "README.md"
+description = "Application for assessing the robustness of parity algorithm's ability to receover from missed packets."
+repository = "https://github.com/Radiator-Labs/fuota-fragmentation-rs/tree/master/parity-robustness-check"
+keywords = ["fuota", "lora"]
+categories = [
+    "Command line utilities",
+    "Development tools",
+    "Embedded development",
+]
+
+[features]
+force-full-r = ["flash-algo/force-full-r", "flash-algo-test/force-full-r"]
+
+[dependencies]
+flash-algo = { path = "../flash-algo" }
+flash-algo-test = { path = "../flash-algo-test" }
+
+async-std = { version = "1.2", features = ["attributes"] }
+crc = "3.2.1"
