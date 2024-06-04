@@ -25,4 +25,7 @@ flash-algo = { path = "../flash-algo" }
 flash-algo-test = { path = "../flash-algo-test" }
 
 async-std = { version = "1.2", features = ["attributes"] }
+clap = { version = "4.5.4", features = ["derive", "std"] }
 crc = "3.2.1"
+serde = { version = "1.0.203", default-features = false, features = ["derive"] }
+serde_json = "1.0.117"

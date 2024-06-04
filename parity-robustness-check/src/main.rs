@@ -25,27 +25,43 @@
 // }
 
 mod fragments;
+mod test_data;
 
+use clap::Parser;
 use flash_algo::manager::{
     ActiveStatus, AppBootStatus, ScratchRam, SlotManager, WriteSegmentOutcome,
 };
 use flash_algo_test::heap_flash::Flash;
 use fragments::Fragments;
+use test_data::{TestCycle, TestRun};
 
 const FRAGMENT_SIZE: usize = 40;
 const PARITY_PERCENT: f64 = 0.45;
 static RAW_FW: &[u8] = include_bytes!("../../flash-algo-test/test-assets/firmware-001/example.bin");
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Number of test cycles to execute
+    #[arg(short, long, default_value_t = 1)]
+    count: usize,
+}
+
 #[async_std::main]
 async fn main() -> std::io::Result<()> {
-    check_it_out().await;
+    let args = Args::parse();
+    let mut results = TestRun::default();
+    let fragments = Fragments::new(RAW_FW, FRAGMENT_SIZE, PARITY_PERCENT);
+    for _ in 0..args.count {
+        results.add_cycle(perform_test_cycle(&fragments).await);
+    }
+    println!("result: {results:?}");
     Ok(())
 }
 
-pub async fn check_it_out() {
+async fn perform_test_cycle(fragments: &Fragments) -> TestCycle {
     // create simulated flash with known data
     // fragment input
-    let fragments = Fragments::new(RAW_FW, FRAGMENT_SIZE, PARITY_PERCENT);
     let mut test_fuota = TestFuota::new().await;
     test_fuota
         .start_session(
@@ -54,24 +70,19 @@ pub async fn check_it_out() {
         )
         .await;
 
-    let mut completed = insert_fragments(
-        &mut test_fuota,
-        fragments.data_fragments(),
-        1,
-        fragments.num_data_fragments(),
-    )
-    .await;
+    let mut completed = insert_fragments(&mut test_fuota, fragments.data_fragments(), 1).await;
     if !completed {
         completed = insert_fragments(
             &mut test_fuota,
             fragments.parity_fragments(),
             1 + fragments.num_data_fragments(),
-            fragments.num_parity_fragments(),
         )
         .await;
     }
     if !completed {
-        panic!("Did not complete after all parity_data")
+        TestCycle::failed_crc()
+    } else {
+        TestCycle::passed()
     }
 
     // "send" each fragment to download
@@ -84,14 +95,12 @@ async fn insert_fragments(
     test_fuota: &mut TestFuota,
     fragment_set: &[Vec<u8>],
     offset: usize,
-    num_in_fragment_set: usize,
 ) -> bool {
     for (i, fragment) in fragment_set.iter().enumerate() {
         let index = offset + i;
         if let Some(resp) = test_fuota.insert_fragment(index, fragment).await {
             match resp {
                 FuotaResponse::FuotaComplete => {
-                    println!("Complete at {index} of {}", num_in_fragment_set);
                     return true;
                 }
                 FuotaResponse::FuotaStatusNoSession => {
