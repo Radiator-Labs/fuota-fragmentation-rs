@@ -78,7 +78,7 @@ impl Fragments {
     pub fn num_data_fragments(&self) -> usize {
         self.data_fragments.len()
     }
-    pub fn _num_parity_fragments(&self) -> usize {
+    pub fn num_parity_fragments(&self) -> usize {
         self.parity_fragments.len()
     }
 
