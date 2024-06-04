@@ -35,8 +35,6 @@ use flash_algo_test::heap_flash::Flash;
 use fragments::Fragments;
 use test_data::{TestCycle, TestRun};
 
-const FRAGMENT_SIZE: usize = 40;
-const PARITY_PERCENT: f64 = 0.45;
 static RAW_FW: &[u8] = include_bytes!("../../flash-algo-test/test-assets/firmware-001/example.bin");
 
 #[derive(Parser, Debug)]
@@ -45,13 +43,19 @@ struct Args {
     /// Number of test cycles to execute
     #[arg(short, long, default_value_t = 1)]
     count: usize,
+
+    #[arg(short, long, default_value_t = 40)]
+    size: usize,
+
+    #[arg(short, long, default_value_t = 0.45)]
+    parity: f64,
 }
 
 #[async_std::main]
 async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let mut results = TestRun::default();
-    let fragments = Fragments::new(RAW_FW, FRAGMENT_SIZE, PARITY_PERCENT);
+    let fragments = Fragments::new(RAW_FW, args.size, args.parity);
     for _ in 0..args.count {
         results.add_cycle(perform_test_cycle(&fragments).await);
     }
