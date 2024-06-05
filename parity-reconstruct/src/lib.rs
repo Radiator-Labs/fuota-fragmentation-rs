@@ -8,6 +8,7 @@
 //! to handle at least N bits (U) or L bits (V). This can't be done
 //! directly due to limitations in the rust type system.
 #![no_std]
+#![deny(missing_docs)]
 
 use bitvec::{array::BitArray, view::BitViewSized};
 
@@ -25,6 +26,9 @@ pub trait ParityMatrix<U: BitViewSized> {
 }
 
 /// Storage trait for matrix data
+///
+/// Note: the maximum number of missing data blocks that we
+/// can handle is assumed to be BitArray<V>.
 pub trait MatrixStorage<V: BitViewSized> {
     /// Store a row of the parity reconsturction matrix.
     ///
@@ -67,13 +71,24 @@ pub trait DataStorage<const BLOCKSIZE: usize> {
     fn get(&self, m: usize) -> [u8; BLOCKSIZE];
 }
 
+/// Status after handling a new block
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockResult {
+    /// More data is needed before a complete
+    /// reconstruction can be made
     NeedMore,
+    /// Too many data blocks are still missing
+    /// to accept a parity block.
     TooManyMissing,
+    /// Sufficient data has been received, the
+    /// data store now contains a full copy of
+    /// the original data.
     Done,
 }
 
+/// Reconstructor for reconstructing data
+/// from an incomplete stream of blocks and
+/// parity data.
 #[derive(Debug, Clone)]
 pub struct Reconstructor<
     Parity,
@@ -104,6 +119,9 @@ impl<
         V: BitViewSized,
     > Reconstructor<Parity, Matrix, ParityData, Data, BLOCKSIZE, U, V>
 {
+    /// Create a new reconstructor. The matrix storage, parity block
+    /// storage and data block storage are all assumed to be empty
+    /// to start (e.g., any index can still be written to).
     pub fn new(
         n: usize,
         parity: Parity,
@@ -132,13 +150,18 @@ impl<
         self.l = self.done.iter().take(self.n).filter(|v| !**v).count();
     }
 
+    // Should we have sufficient data? Note, this does not tell
+    // itself if final processing has already been done. That needs
+    // to be done on the first block after which this is true.
     fn is_complete(&self) -> bool {
         (self.l == 0 && !self.done.iter().take(self.n).any(|v| !*v))
             || (self.l != 0 && !self.used.iter().take(self.l).any(|v| !*v))
     }
 
+    // Handle a data blcok during stage 1
     fn handle_data_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) {
         debug_assert!(self.n > index);
+        debug_assert_eq!(self.l, 0);
 
         if !self.done[index] {
             self.done.set(index, true);
@@ -146,7 +169,9 @@ impl<
         }
     }
 
+    // Handle a parity block during stage 2
     fn handle_parity_block(&mut self, index: usize, mut data: [u8; BLOCKSIZE]) {
+        debug_assert_ne!(self.l, 0);
         let row = self.parity.row(index);
 
         // remove parity from already received datablocks.
@@ -199,7 +224,10 @@ impl<
         }
     }
 
+    // Convert a reduced index to an index in the full data array.
     fn reduced_to_full(&self, mut index: usize) -> usize {
+        debug_assert!(index < self.l);
+
         for (i, have_data) in self.done.iter().enumerate().take(self.n) {
             if !*have_data {
                 if index == 0 {
@@ -230,6 +258,8 @@ impl<
         }
     }
 
+    /// Handle a single block that has been received. The index is the index of the
+    /// row in the parity matrix that was used to generate the data block.
     pub fn handle_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) -> BlockResult {
         if self.is_complete() {
             return BlockResult::Done;
@@ -239,11 +269,16 @@ impl<
             self.init_stage2();
 
             if BitArray::<V>::ZERO.len() < self.l {
+                // Given this value of l, we would
+                // overflow the matrix rows, abort.
                 self.l = 0;
                 return BlockResult::TooManyMissing;
             }
         }
 
+        // Self.l indicates in which stage we are
+        // l==0 => stage 1 (just data blocks)
+        // l>0 => stage 2 (processing parity)
         if self.l == 0 {
             self.handle_data_block(index, data);
             if self.is_complete() {
@@ -255,6 +290,8 @@ impl<
             self.handle_parity_block(index, data);
 
             if self.is_complete() {
+                // Ensure we actually produce the
+                // final data blocks.
                 self.finish();
                 BlockResult::Done
             } else {
