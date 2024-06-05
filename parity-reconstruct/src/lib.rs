@@ -8,7 +8,11 @@
 //! to handle at least N bits (U) or L bits (V). This can't be done
 //! directly due to limitations in the rust type system.
 #![no_std]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
+#![allow(clippy::type_complexity)]
+
+#[cfg(feature = "flash")]
+pub mod flash;
 
 pub mod lfdbt;
 
@@ -34,7 +38,8 @@ pub trait ParityMatrix<U: BitViewSized> {
 /// Note: the maximum number of missing data blocks that we
 /// can handle is assumed to be BitArray<V>.
 pub trait MatrixStorage<V: BitViewSized> {
-    /// Store a row of the parity reconsturction matrix.
+    type Error;
+    /// Store a row of the parity reconstruction matrix.
     ///
     /// Called at most once for each value of m
     ///
@@ -43,44 +48,53 @@ pub trait MatrixStorage<V: BitViewSized> {
     ///  data[i] = false for all i > m
     ///
     /// m is smaller than BitArray<V>::len()
-    fn set_row(&mut self, m: usize, data: BitArray<V>);
+    fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error>;
     /// Get a row of the parity reconsturction matrix.
     ///
     /// Note: can be called before corresponding set_row call.
     /// in that case, the result should be all false.
     ///
     /// m is smaller than BitArray<V>::len()
-    fn row(&self, m: usize) -> BitArray<V>;
+    fn row(&self, m: usize) -> Result<BitArray<V>, Self::Error>;
 }
 
 /// Storage trait for parity blocks
 pub trait ParityStorage<const BLOCKSIZE: usize> {
+    type Error;
     /// Store a parity block.
     ///
     /// Called at most once for each value of m.
     ///
     /// m is smaller than BitArray<V>::len()
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]);
+    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error>;
     /// Get a block previously stored
     ///
     /// Called only after a corresponding store call
     /// for m.
     ///
     /// m is smaller than BitArray<V>::len()
-    fn get(&self, m: usize) -> [u8; BLOCKSIZE];
+    fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
 }
 
 /// Storage trait for reconstructed data.
 pub trait DataStorage<const BLOCKSIZE: usize> {
+    type Error;
     /// Store a newly received or reconstructed block.
     ///
     /// Called exactly once for each value of m in 0..N
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]);
+    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error>;
     /// Get a block previously received.
     ///
     /// Called only after a corresponding store call
     /// for m.
-    fn get(&self, m: usize) -> [u8; BLOCKSIZE];
+    fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Error<M, P, D> {
+    MatrixStorageError(M),
+    ParityStorageError(P),
+    DataStorageError(D),
 }
 
 /// Status after handling a new block
@@ -173,25 +187,37 @@ impl<
     }
 
     // Handle a data blcok during stage 1
-    fn handle_data_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) {
+    fn handle_data_block(
+        &mut self,
+        index: usize,
+        data: [u8; BLOCKSIZE],
+    ) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
         debug_assert!(self.n > index);
         debug_assert_eq!(self.l, 0);
 
         if !self.done[index] {
             self.done.set(index, true);
-            self.datablocks.store(index, data);
+            self.datablocks
+                .store(index, data)
+                .map_err(Error::DataStorageError)?;
         }
+
+        Ok(())
     }
 
     // Handle a parity block during stage 2
-    fn handle_parity_block(&mut self, index: usize, mut data: [u8; BLOCKSIZE]) {
+    fn handle_parity_block(
+        &mut self,
+        index: usize,
+        mut data: [u8; BLOCKSIZE],
+    ) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
         debug_assert_ne!(self.l, 0);
         let row = self.parity.row(index);
 
         // remove parity from already received datablocks.
         for (i, (rowel, have_data)) in row.iter().zip(self.done.iter()).enumerate().take(self.n) {
             if *rowel && *have_data {
-                let other_block = self.datablocks.get(i);
+                let other_block = self.datablocks.get(i).map_err(Error::DataStorageError)?;
                 for (datael, otherel) in data.iter_mut().zip(other_block.iter()) {
                     *datael ^= *otherel
                 }
@@ -217,15 +243,25 @@ impl<
         loop {
             if reducedrow[working_head] && self.used[working_head] {
                 // eliminate
-                let other_block = self.parityblocks.get(working_head);
+                let other_block = self
+                    .parityblocks
+                    .get(working_head)
+                    .map_err(Error::ParityStorageError)?;
                 for (i, el) in data.iter_mut().enumerate() {
                     *el ^= other_block[i];
                 }
-                reducedrow ^= self.matrix.row(working_head);
+                reducedrow ^= self
+                    .matrix
+                    .row(working_head)
+                    .map_err(Error::MatrixStorageError)?;
             } else if reducedrow[working_head] {
                 // new row, store it
-                self.matrix.set_row(working_head, reducedrow);
-                self.parityblocks.store(working_head, data);
+                self.matrix
+                    .set_row(working_head, reducedrow)
+                    .map_err(Error::MatrixStorageError)?;
+                self.parityblocks
+                    .store(working_head, data)
+                    .map_err(Error::ParityStorageError)?;
                 self.used.set(working_head, true);
                 break;
             }
@@ -236,6 +272,8 @@ impl<
                 working_head -= 1;
             }
         }
+
+        Ok(())
     }
 
     // Convert a reduced index to an index in the full data array.
@@ -256,27 +294,41 @@ impl<
     }
 
     // Reconstruct the final data blocks from parity.
-    fn finish(&mut self) {
+    fn finish(&mut self) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
         for i in 0..self.l {
-            let mut output = self.parityblocks.get(i);
-            let matrix_row = self.matrix.row(i);
+            let mut output = self
+                .parityblocks
+                .get(i)
+                .map_err(Error::ParityStorageError)?;
+            let matrix_row = self.matrix.row(i).map_err(Error::MatrixStorageError)?;
             for j in 0..i {
                 if matrix_row[j] {
-                    let other_block = self.datablocks.get(self.reduced_to_full(j));
+                    let other_block = self
+                        .datablocks
+                        .get(self.reduced_to_full(j))
+                        .map_err(Error::DataStorageError)?;
                     for (k, el) in output.iter_mut().enumerate() {
                         *el ^= other_block[k];
                     }
                 }
             }
-            self.datablocks.store(self.reduced_to_full(i), output);
+            self.datablocks
+                .store(self.reduced_to_full(i), output)
+                .map_err(Error::DataStorageError)?;
         }
+
+        Ok(())
     }
 
     /// Handle a single block that has been received. The index is the index of the
     /// row in the parity matrix that was used to generate the data block.
-    pub fn handle_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) -> BlockResult {
+    pub fn handle_block(
+        &mut self,
+        index: usize,
+        data: [u8; BLOCKSIZE],
+    ) -> Result<BlockResult, Error<Matrix::Error, ParityData::Error, Data::Error>> {
         if self.is_complete() {
-            return BlockResult::Done(self.n * BLOCKSIZE);
+            return Ok(BlockResult::Done(self.n * BLOCKSIZE));
         }
 
         if index >= self.n && self.l == 0 {
@@ -286,7 +338,7 @@ impl<
                 // Given this value of l, we would
                 // overflow the matrix rows, abort.
                 self.l = 0;
-                return BlockResult::TooManyMissing;
+                return Ok(BlockResult::TooManyMissing);
             }
         }
 
@@ -294,22 +346,22 @@ impl<
         // l==0 => stage 1 (just data blocks)
         // l>0 => stage 2 (processing parity)
         if self.l == 0 {
-            self.handle_data_block(index, data);
+            self.handle_data_block(index, data)?;
             if self.is_complete() {
-                BlockResult::Done(self.n * BLOCKSIZE)
+                Ok(BlockResult::Done(self.n * BLOCKSIZE))
             } else {
-                BlockResult::NeedMore
+                Ok(BlockResult::NeedMore)
             }
         } else {
-            self.handle_parity_block(index, data);
+            self.handle_parity_block(index, data)?;
 
             if self.is_complete() {
                 // Ensure we actually produce the
                 // final data blocks.
-                self.finish();
-                BlockResult::Done(self.n * BLOCKSIZE)
+                self.finish()?;
+                Ok(BlockResult::Done(self.n * BLOCKSIZE))
             } else {
-                BlockResult::NeedMore
+                Ok(BlockResult::NeedMore)
             }
         }
     }
@@ -355,16 +407,20 @@ mod tests {
     }
 
     impl<V: BitViewSized> MatrixStorage<V> for TestMatrixStorage<V> {
-        fn set_row(&mut self, m: usize, data: BitArray<V>) {
+        type Error = core::convert::Infallible;
+
+        fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error> {
             assert!(data[m]);
             for (i, el) in data.iter().enumerate() {
                 assert!(i <= m || !el)
             }
             self.data[m] = data;
+
+            Ok(())
         }
 
-        fn row(&self, m: usize) -> BitArray<V> {
-            self.data[m].clone()
+        fn row(&self, m: usize) -> Result<BitArray<V>, Self::Error> {
+            Ok(self.data[m].clone())
         }
     }
 
@@ -383,28 +439,36 @@ mod tests {
     }
 
     impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
-        fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) {
+        type Error = core::convert::Infallible;
+
+        fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
             assert!(!self.used[m]);
             self.data[m] = data;
             self.used[m] = true;
+
+            Ok(())
         }
 
-        fn get(&self, m: usize) -> [u8; BLOCKSIZE] {
+        fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
             assert!(self.used[m]);
-            self.data[m]
+            Ok(self.data[m])
         }
     }
 
     impl<const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
-        fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) {
+        type Error = core::convert::Infallible;
+
+        fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
             assert!(!self.used[m]);
             self.data[m] = data;
             self.used[m] = true;
+
+            Ok(())
         }
 
-        fn get(&self, m: usize) -> [u8; BLOCKSIZE] {
+        fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
             assert!(self.used[m]);
-            self.data[m]
+            Ok(self.data[m])
         }
     }
 
@@ -417,11 +481,11 @@ mod tests {
             BlockStorage::new(2),
             BlockStorage::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(9, [2]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(10, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(14, [6]), BlockResult::Done(4));
+        assert_eq!(rec.handle_block(0, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, [3]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(9, [2]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(10, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(14, [6]), Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -436,11 +500,11 @@ mod tests {
             BlockStorage::new(3),
             BlockStorage::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(10, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(14, [6]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(16, [7]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [4]), BlockResult::Done(4));
+        assert_eq!(rec.handle_block(0, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(10, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(14, [6]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(16, [7]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [4]), Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -456,10 +520,10 @@ mod tests {
             BlockStorage::new(4),
         );
 
-        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(1, [2]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(3, [4]), BlockResult::Done(4));
+        assert_eq!(rec.handle_block(0, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, [2]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, [3]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(3, [4]), Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -475,14 +539,14 @@ mod tests {
             BlockStorage::new(4),
         );
 
-        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(1, [2]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(1, [2]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(3, [4]), BlockResult::Done(4));
-        assert_eq!(rec.handle_block(3, [4]), BlockResult::Done(4));
+        assert_eq!(rec.handle_block(0, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(0, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, [2]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, [2]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, [3]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, [3]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(3, [4]), Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(3, [4]), Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -498,22 +562,22 @@ mod tests {
             BlockStorage::new(16),
         );
 
-        assert_eq!(rec.handle_block(0, [0]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(1, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(2, [2]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(3, [3]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(4, [4]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(5, [5]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(6, [6]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
-        assert_eq!(rec.handle_block(7, [7]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(19, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(0, [0]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(1, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(2, [2]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(3, [3]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(4, [4]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(5, [5]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(6, [6]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::TooManyMissing));
+        assert_eq!(rec.handle_block(7, [7]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, [1]), Ok(BlockResult::NeedMore));
     }
 
     #[test]
@@ -525,12 +589,12 @@ mod tests {
             BlockStorage::new(3),
             BlockStorage::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(14, [6]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(9, [2]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(10, [1]), BlockResult::Done(4));
-        assert_eq!(rec.handle_block(10, [1]), BlockResult::Done(4));
+        assert_eq!(rec.handle_block(0, [1]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(14, [6]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(9, [2]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, [3]), Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(10, [1]), Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(10, [1]), Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
