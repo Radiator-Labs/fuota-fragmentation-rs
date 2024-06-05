@@ -1,9 +1,9 @@
 //! Reconstruction algorithm for data from parity data.
-//! 
+//!
 //! Below, we use N to indicate the number of blocks in the data
 //! L is used to indicate the maximum number of missing data block
 //! that we are prepared to handle
-//! 
+//!
 //! We use U and V for BitArray backing storages of size sufficient
 //! to handle at least N bits (U) or L bits (V). This can't be done
 //! directly due to limitations in the rust type system.
@@ -21,7 +21,7 @@ pub trait ParityMatrix<U: BitViewSized> {
     ///
     /// For m < N, this should be a row with exactly
     /// one true, in position m.
-    /// 
+    ///
     /// Any excess bits in the bitarray MUST be false
     fn row(&self, m: usize) -> BitArray<U>;
 }
@@ -70,52 +70,116 @@ pub trait DataStorage<const BLOCKSIZE: usize> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Reconstructor<Parity, Matrix, ParityData, Data, const BLOCKSIZE: usize, U: BitViewSized, V: BitViewSized> {
+pub struct Reconstructor<
+    Parity,
+    Matrix,
+    ParityData,
+    Data,
+    const BLOCKSIZE: usize,
+    U: BitViewSized,
+    V: BitViewSized,
+> {
     n: usize,
+    l: usize,
     parity: Parity,
     matrix: Matrix,
     parityblocks: ParityData,
     datablocks: Data,
+    done: BitArray<U>,
     used: BitArray<V>,
-    _phantom: PhantomData<U>
+    _phantom: PhantomData<U>,
 }
 
 impl<
         Parity: ParityMatrix<U>,
-        Matrix: MatrixStorage<U>,
+        Matrix: MatrixStorage<V>,
         ParityData: ParityStorage<BLOCKSIZE>,
         Data: DataStorage<BLOCKSIZE>,
         const BLOCKSIZE: usize,
         U: BitViewSized,
-    > Reconstructor<Parity, Matrix, ParityData, Data, BLOCKSIZE, U, U>
+        V: BitViewSized,
+    > Reconstructor<Parity, Matrix, ParityData, Data, BLOCKSIZE, U, V>
 {
-    pub fn new(n: usize, parity: Parity, matrix: Matrix, parityblocks: ParityData, datablocks: Data) -> Self {
+    pub fn new(
+        n: usize,
+        parity: Parity,
+        matrix: Matrix,
+        parityblocks: ParityData,
+        datablocks: Data,
+    ) -> Self {
         Reconstructor {
             n,
+            l: 0,
             parity,
             matrix,
             parityblocks,
             datablocks,
+            done: BitArray::ZERO,
             used: BitArray::ZERO,
             _phantom: PhantomData,
         }
     }
 
-    // Returns true when we have sufficient data for reconstruction
-    pub fn handle_block(&mut self, index: usize, mut data: [u8; BLOCKSIZE]) -> bool {
-        let mut row = self.parity.row(index);
-        let mut working_head = self.n - 1;
+    // Do the preprocessing needed to start handling parity blocks
+    // This is called once the first parity block is received
+    fn init_stage2(&mut self) {
+        debug_assert_eq!(self.l, 0);
+
+        self.l = self.done.iter().take(self.n).filter(|v| !**v).count();
+    }
+
+    fn is_complete(&self) -> bool {
+        (self.l == 0 && !self.done.iter().take(self.n).any(|v| !*v))
+            || (self.l != 0 && !self.used.iter().take(self.l).any(|v| !*v))
+    }
+
+    fn handle_data_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) {
+        debug_assert!(self.n > index);
+
+        self.done.set(index, true);
+        self.datablocks.store(index, data);
+    }
+
+    fn handle_parity_block(&mut self, index: usize, mut data: [u8; BLOCKSIZE]) {
+        let row = self.parity.row(index);
+
+        // remove parity from already received datablocks.
+        for (i, (rowel, have_data)) in row.iter().zip(self.done.iter()).enumerate().take(self.n) {
+            if *rowel && *have_data {
+                let other_block = self.datablocks.get(i);
+                for (datael, otherel) in data.iter_mut().zip(other_block.iter()) {
+                    *datael ^= *otherel
+                }
+            }
+        }
+
+        // Construct reduced matrix row
+        let mut reducedrow: BitArray<V> = BitArray::ZERO;
+        let mut j = 0;
+        for (rowel, have_data) in row.iter().zip(self.done.iter()).take(self.n) {
+            if !*have_data {
+                reducedrow.set(j, *rowel);
+                j += 1;
+            }
+        }
+        debug_assert_eq!(j, self.l);
+
+        // not strictly neccessary, but catches incorrect references to row below
+        drop(row);
+
+        // Reduce further to upper triangular form, and store
+        let mut working_head = self.l - 1;
         loop {
-            if row[working_head] && self.used[working_head] {
+            if reducedrow[working_head] && self.used[working_head] {
                 // eliminate
                 let other_block = self.parityblocks.get(working_head);
                 for (i, el) in data.iter_mut().enumerate() {
                     *el ^= other_block[i];
                 }
-                row ^= self.matrix.row(working_head);
-            } else if row[working_head] {
+                reducedrow ^= self.matrix.row(working_head);
+            } else if reducedrow[working_head] {
                 // new row, store it
-                self.matrix.set_row(working_head, row);
+                self.matrix.set_row(working_head, reducedrow);
                 self.parityblocks.store(working_head, data);
                 self.used.set(working_head, true);
                 break;
@@ -127,25 +191,58 @@ impl<
                 working_head -= 1;
             }
         }
+    }
 
-        // Check whether we have sufficient data
-        if !self.used.iter().take(self.n).any(|v| !v) {
-            for i in 0..self.n {
-                let mut output = self.parityblocks.get(i);
-                let matrix_row = self.matrix.row(i);
-                for j in 0..i {
-                    if matrix_row[j] {
-                        let other_block = self.datablocks.get(j);
-                        for (k, el) in output.iter_mut().enumerate() {
-                            *el ^= other_block[k];
-                        }
+    fn reduced_to_full(&self, mut index: usize) -> usize {
+        for (i, have_data) in self.done.iter().enumerate().take(self.n) {
+            if !*have_data {
+                if index == 0 {
+                    return i;
+                } else {
+                    index -= 1;
+                }
+            }
+        }
+
+        panic!("Invalid reduced index");
+    }
+
+    // Reconstruct the final data blocks from parity.
+    fn finish(&mut self) {
+        for i in 0..self.l {
+            let mut output = self.parityblocks.get(i);
+            let matrix_row = self.matrix.row(i);
+            for j in 0..i {
+                if matrix_row[j] {
+                    let other_block = self.datablocks.get(self.reduced_to_full(j));
+                    for (k, el) in output.iter_mut().enumerate() {
+                        *el ^= other_block[k];
                     }
                 }
-                self.datablocks.store(i, output);
             }
-            true
+            self.datablocks.store(self.reduced_to_full(i), output);
+        }
+    }
+
+    pub fn handle_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) -> bool {
+        debug_assert!(!self.is_complete());
+
+        if index >= self.n && self.l == 0 {
+            self.init_stage2();
+        }
+
+        if self.l == 0 {
+            self.handle_data_block(index, data);
+            self.is_complete()
         } else {
-            false
+            self.handle_parity_block(index, data);
+
+            if self.is_complete() {
+                self.finish();
+                true
+            } else {
+                false
+            }
         }
     }
 }
@@ -245,11 +342,11 @@ mod tests {
 
     #[test]
     fn simple_reconstruction_test() {
-        let mut rec = Reconstructor::new(
+        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
             4,
             TestParity::<4>,
-            TestMatrixStorage::<[u8;1]>::new(4),
-            BlockStorage::new(4),
+            TestMatrixStorage::new(2),
+            BlockStorage::new(2),
             BlockStorage::new(4),
         );
         assert_eq!(rec.handle_block(0, [1]), false);
@@ -264,11 +361,11 @@ mod tests {
 
     #[test]
     fn nontrivial_relation() {
-        let mut rec = Reconstructor::new(
+        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
             4,
             TestParity::<4>,
-            TestMatrixStorage::<[u8;1]>::new(4),
-            BlockStorage::new(4),
+            TestMatrixStorage::<[u8; 1]>::new(3),
+            BlockStorage::new(3),
             BlockStorage::new(4),
         );
         assert_eq!(rec.handle_block(0, [1]), false);
