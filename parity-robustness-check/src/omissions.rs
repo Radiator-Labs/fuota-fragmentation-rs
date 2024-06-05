@@ -30,7 +30,11 @@ impl Omissions {
     }
 
     pub(crate) fn emit(&self, index: usize) -> bool {
-        assert!(index < self.emit_fragment.len());
+        assert!(
+            index < self.emit_fragment.len(),
+            "index {index}, frag len {}",
+            self.emit_fragment.len()
+        );
 
         self.emit_fragment[index]
     }

@@ -70,12 +70,12 @@ async fn perform_test_cycle(fragments: &Fragments, omissions: &Omissions) -> Tes
         .await;
 
     let mut fuota_result =
-        insert_fragments(&mut test_fuota, fragments.data_fragments(), 1, omissions).await;
+        insert_fragments(&mut test_fuota, fragments.data_fragments(), 0, omissions).await;
     if fuota_result == FuotaResponse::Incomplete {
         fuota_result = insert_fragments(
             &mut test_fuota,
             fragments.parity_fragments(),
-            1 + fragments.num_data_fragments(),
+            fragments.num_data_fragments(),
             omissions,
         )
         .await;
@@ -97,7 +97,7 @@ async fn insert_fragments(
     for (i, fragment) in fragment_set.iter().enumerate() {
         let index = offset + i;
         if omissions.emit(index) {
-            match test_fuota.insert_fragment(index, fragment).await {
+            match test_fuota.insert_fragment(index + 1, fragment).await {
                 FuotaResponse::Incomplete => (),
                 FuotaResponse::Complete {
                     last_fragment_index,
