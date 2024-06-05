@@ -9,8 +9,6 @@
 //! directly due to limitations in the rust type system.
 #![no_std]
 
-use core::marker::PhantomData;
-
 use bitvec::{array::BitArray, view::BitViewSized};
 
 /// Trait describing a parity matrix.
@@ -69,6 +67,13 @@ pub trait DataStorage<const BLOCKSIZE: usize> {
     fn get(&self, m: usize) -> [u8; BLOCKSIZE];
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BlockResult {
+    NeedMore,
+    TooManyMissing,
+    Done,
+}
+
 #[derive(Debug, Clone)]
 pub struct Reconstructor<
     Parity,
@@ -87,7 +92,6 @@ pub struct Reconstructor<
     datablocks: Data,
     done: BitArray<U>,
     used: BitArray<V>,
-    _phantom: PhantomData<U>,
 }
 
 impl<
@@ -107,6 +111,7 @@ impl<
         parityblocks: ParityData,
         datablocks: Data,
     ) -> Self {
+        debug_assert!(n <= BitArray::<U>::ZERO.len());
         Reconstructor {
             n,
             l: 0,
@@ -116,7 +121,6 @@ impl<
             datablocks,
             done: BitArray::ZERO,
             used: BitArray::ZERO,
-            _phantom: PhantomData,
         }
     }
 
@@ -136,8 +140,10 @@ impl<
     fn handle_data_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) {
         debug_assert!(self.n > index);
 
-        self.done.set(index, true);
-        self.datablocks.store(index, data);
+        if !self.done[index] {
+            self.done.set(index, true);
+            self.datablocks.store(index, data);
+        }
     }
 
     fn handle_parity_block(&mut self, index: usize, mut data: [u8; BLOCKSIZE]) {
@@ -224,24 +230,35 @@ impl<
         }
     }
 
-    pub fn handle_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) -> bool {
-        debug_assert!(!self.is_complete());
+    pub fn handle_block(&mut self, index: usize, data: [u8; BLOCKSIZE]) -> BlockResult {
+        if self.is_complete() {
+            return BlockResult::Done;
+        }
 
         if index >= self.n && self.l == 0 {
             self.init_stage2();
+
+            if BitArray::<V>::ZERO.len() < self.l {
+                self.l = 0;
+                return BlockResult::TooManyMissing;
+            }
         }
 
         if self.l == 0 {
             self.handle_data_block(index, data);
-            self.is_complete()
+            if self.is_complete() {
+                BlockResult::Done
+            } else {
+                BlockResult::NeedMore
+            }
         } else {
             self.handle_parity_block(index, data);
 
             if self.is_complete() {
                 self.finish();
-                true
+                BlockResult::Done
             } else {
-                false
+                BlockResult::NeedMore
             }
         }
     }
@@ -349,11 +366,11 @@ mod tests {
             BlockStorage::new(2),
             BlockStorage::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]), false);
-        assert_eq!(rec.handle_block(2, [3]), false);
-        assert_eq!(rec.handle_block(9, [2]), false);
-        assert_eq!(rec.handle_block(10, [1]), false);
-        assert_eq!(rec.handle_block(14, [6]), true);
+        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(9, [2]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(10, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(14, [6]), BlockResult::Done);
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -364,15 +381,105 @@ mod tests {
         let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
             4,
             TestParity::<4>,
-            TestMatrixStorage::<[u8; 1]>::new(3),
+            TestMatrixStorage::new(3),
             BlockStorage::new(3),
             BlockStorage::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]), false);
-        assert_eq!(rec.handle_block(10, [1]), false);
-        assert_eq!(rec.handle_block(14, [6]), false);
-        assert_eq!(rec.handle_block(16, [7]), false);
-        assert_eq!(rec.handle_block(19, [4]), true);
+        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(10, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(14, [6]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(16, [7]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [4]), BlockResult::Done);
+
+        assert_eq!(rec.datablocks.used, [true, true, true, true]);
+        assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
+    }
+
+    #[test]
+    fn no_parity_needed() {
+        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+            4,
+            TestParity::<4>,
+            TestMatrixStorage::new(0),
+            BlockStorage::new(0),
+            BlockStorage::new(4),
+        );
+
+        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(1, [2]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(3, [4]), BlockResult::Done);
+
+        assert_eq!(rec.datablocks.used, [true, true, true, true]);
+        assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
+    }
+
+    #[test]
+    fn repeats_are_ok() {
+        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+            4,
+            TestParity::<4>,
+            TestMatrixStorage::new(0),
+            BlockStorage::new(0),
+            BlockStorage::new(4),
+        );
+
+        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(1, [2]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(1, [2]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(3, [4]), BlockResult::Done);
+        assert_eq!(rec.handle_block(3, [4]), BlockResult::Done);
+
+        assert_eq!(rec.datablocks.used, [true, true, true, true]);
+        assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
+    }
+
+    #[test]
+    fn too_many_missing() {
+        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 2], [u8; 1]>::new(
+            16,
+            TestParity::<16>,
+            TestMatrixStorage::new(8),
+            BlockStorage::new(8),
+            BlockStorage::new(16),
+        );
+
+        assert_eq!(rec.handle_block(0, [0]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(1, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(2, [2]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(3, [3]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(4, [4]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(5, [5]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(6, [6]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::TooManyMissing);
+        assert_eq!(rec.handle_block(7, [7]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(19, [1]), BlockResult::NeedMore);
+    }
+
+    #[test]
+    fn out_of_order() {
+        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+            4,
+            TestParity::<4>,
+            TestMatrixStorage::new(3),
+            BlockStorage::new(3),
+            BlockStorage::new(4),
+        );
+        assert_eq!(rec.handle_block(0, [1]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(14, [6]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(9, [2]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(2, [3]), BlockResult::NeedMore);
+        assert_eq!(rec.handle_block(10, [1]), BlockResult::Done);
+        assert_eq!(rec.handle_block(10, [1]), BlockResult::Done);
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
