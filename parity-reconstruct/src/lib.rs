@@ -10,6 +10,8 @@
 #![no_std]
 #![deny(missing_docs)]
 
+pub mod lfdbt;
+
 use bitvec::{array::BitArray, view::BitViewSized};
 
 /// Trait describing a parity matrix.
