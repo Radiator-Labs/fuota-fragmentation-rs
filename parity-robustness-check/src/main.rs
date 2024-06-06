@@ -53,7 +53,14 @@ async fn main() -> std::io::Result<()> {
     let mut rng = SmallRng::from_seed(seed);
 
     let fragments = Fragments::new(RAW_FW, args.size, args.parity);
-    let mut results = TestRun::new(args.count, args.size, args.parity, &seed, &fragments);
+    let mut results = TestRun::new(
+        args.count,
+        args.size,
+        args.parity,
+        args.skip_rate,
+        &seed,
+        &fragments,
+    );
     for _ in 0..args.count {
         let omissions = Omissions::new(args.skip_rate, &mut rng, &fragments);
         results.add_cycle(perform_test_cycle(&fragments, &omissions).await);
