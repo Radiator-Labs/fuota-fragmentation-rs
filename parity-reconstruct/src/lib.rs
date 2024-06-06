@@ -43,9 +43,9 @@ pub trait MatrixStorage<V: BitViewSized> {
     ///
     /// Called at most once for each value of m
     ///
-    /// When called for m, data has the following guarantees
-    ///  data[m] = true
-    ///  data[i] = false for all i > m
+    /// When called for m, data has the following guarantees:
+    /// - `data[m] = true`
+    /// - `data[i] = false for all i > m`
     ///
     /// m is smaller than BitArray<V>::len()
     fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error>;
@@ -55,7 +55,7 @@ pub trait MatrixStorage<V: BitViewSized> {
     /// in that case, the result should be all false.
     ///
     /// m is smaller than BitArray<V>::len()
-    fn row(&self, m: usize) -> Result<BitArray<V>, Self::Error>;
+    fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error>;
 }
 
 /// Storage trait for parity blocks
@@ -73,7 +73,7 @@ pub trait ParityStorage<const BLOCKSIZE: usize> {
     /// for m.
     ///
     /// m is smaller than BitArray<V>::len()
-    fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
+    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
 }
 
 /// Storage trait for reconstructed data.
@@ -87,7 +87,7 @@ pub trait DataStorage<const BLOCKSIZE: usize> {
     ///
     /// Called only after a corresponding store call
     /// for m.
-    fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
+    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,7 +368,7 @@ impl<
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     extern crate std;
 
     use core::iter::repeat;
@@ -376,7 +376,7 @@ mod tests {
 
     use super::*;
 
-    struct TestParity<const N: usize>;
+    pub(crate) struct TestParity<const N: usize>;
 
     impl<const N: usize, U: BitViewSized> ParityMatrix<U> for TestParity<N> {
         fn row(&self, m: usize) -> BitArray<U> {
@@ -419,7 +419,7 @@ mod tests {
             Ok(())
         }
 
-        fn row(&self, m: usize) -> Result<BitArray<V>, Self::Error> {
+        fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error> {
             Ok(self.data[m].clone())
         }
     }
@@ -449,7 +449,7 @@ mod tests {
             Ok(())
         }
 
-        fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+        fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
             assert!(self.used[m]);
             Ok(self.data[m])
         }
@@ -466,7 +466,7 @@ mod tests {
             Ok(())
         }
 
-        fn get(&self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+        fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
             assert!(self.used[m]);
             Ok(self.data[m])
         }

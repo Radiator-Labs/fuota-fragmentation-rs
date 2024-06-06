@@ -9,6 +9,9 @@ edition = "2021"
 bitvec = { version = "1.0.1", default-features = false, features = ["atomic"] }
 embedded-storage = { version = "0.3.1", optional = true }
 
+[dev-dependencies]
+embedded-storage-inmemory = "0.1"
+
 [features]
 # Enable the flash adapters
 flash = ["dep:embedded-storage"]
