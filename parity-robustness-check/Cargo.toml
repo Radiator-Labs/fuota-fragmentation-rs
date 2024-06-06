@@ -8,7 +8,7 @@ authors = [
     "Phil Markgraf <philip.markgraf@kel.vin>",
 ]
 readme = "README.md"
-description = "Application for assessing the robustness of parity algorithm's ability to receover from missed packets."
+description = "Application for assessing the robustness of parity algorithm's ability to recover from missed packets."
 repository = "https://github.com/Radiator-Labs/fuota-fragmentation-rs/tree/master/parity-robustness-check"
 keywords = ["fuota", "lora"]
 categories = [

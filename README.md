@@ -17,6 +17,10 @@ Work creating this driver to support the FUOTA Fragmentation was performed as pa
 development by [Kelvin](https://kel.vin/) (formerly Radiator Labs), a green energy company
 dedicated to decarbonizing the world's legacy buildings.
 
+## Verification
+
+The library is verified in two ways. There are example based tests alongside the flash-algo code, and in the flash-algo-test directory. There is also a statistical check of the parity robustness. Since there is some chance of the parity algorithm succeeding or not succeeding given which packets are missed in a given transmission, the parity-robustness-check allows the algorithm to be run many times against randomized fragment loss.
+
 ## Minimum Supported Rust Version (MSRV)
 
 This crate is guaranteed to compile on stable Rust TBD and up. It *might*
