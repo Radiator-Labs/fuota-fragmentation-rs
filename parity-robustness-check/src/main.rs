@@ -15,6 +15,10 @@ static RAW_FW: &[u8] = include_bytes!("../../flash-algo-test/test-assets/firmwar
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Output the detailed JSON output
+    #[arg(short, long, default_value_t = false)]
+    detailed: bool,
+
     /// Number of test cycles to execute
     #[arg(short, long, default_value_t = 1)]
     count: usize,
@@ -54,7 +58,14 @@ async fn main() -> std::io::Result<()> {
         let omissions = Omissions::new(args.skip_rate, &mut rng, &fragments);
         results.add_cycle(perform_test_cycle(&fragments, &omissions).await);
     }
-    println!("result: {results:?}");
+
+    if args.detailed {
+        let detailed_results = ::serde_json::to_string_pretty(&results).unwrap();
+        println!("{detailed_results}");
+    }
+    let summary = ::serde_json::to_string_pretty(&results.summary()).unwrap();
+    println!("{summary}");
+
     Ok(())
 }
 
