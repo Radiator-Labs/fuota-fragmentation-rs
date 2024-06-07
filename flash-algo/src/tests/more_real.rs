@@ -2,18 +2,22 @@
 //!
 //! <https://github.com/elsalahy/test-fuota-server>
 
-use crc::Crc;
-use flash_algo::{
+extern crate std;
+use std::{prelude::rust_2021::*, println, vec};
+
+use crate::{
     bitcache::BitCache,
     fragmentation::get_parity_matrix_row,
     manager::{
         ActiveStatus, AppBootStatus, ScratchRam, SlotManager, WriteSegmentOutcome, HEADER_SIZE,
     },
     protocol::{segment_status_table::MAX_SEGMENTS, Crc32, FlashRepr, Signature},
+    testutils::heap_flash::Flash,
 };
+use crc::Crc;
 
 const SEGMENT_SIZE_BYTES: usize = 45;
-static RAW_FW: &[u8] = include_bytes!("../test-assets/firmware-001/example.bin");
+static RAW_FW: &[u8] = include_bytes!("../../test-assets/firmware-001/example.bin");
 
 fn generate_parity_rows(count: usize) -> Vec<Vec<u8>> {
     let data_chunks = fw_with_hdr()
@@ -88,7 +92,7 @@ async fn basics() {
 
     let mut scratch = ScratchRam::new();
 
-    let mut flash = flash_algo_test::heap_flash::Flash::new(64 * 1024, 1024 * 1024);
+    let mut flash = Flash::new(64 * 1024, 1024 * 1024);
     let mut mgr = SlotManager::<4>::new(SLOT_SIZE);
 
     let init = mgr.app_boot_status(&mut flash, &mut scratch).await.unwrap();
@@ -128,12 +132,7 @@ async fn basics() {
 
     for (i, ch) in fw_chunks[..fw_chunks.len() - 1].iter().enumerate() {
         let res = start
-            .write_segment(
-                &mut flash,
-                &mut scratch.firmware_rd_scratch,
-                i as u32 + 1,
-                ch,
-            )
+            .write_segment(&mut flash, &mut scratch, i as u32 + 1, ch)
             .await
             .unwrap();
         assert_eq!(res, WriteSegmentOutcome::Consumed);
@@ -141,7 +140,7 @@ async fn basics() {
     let res = start
         .write_segment(
             &mut flash,
-            &mut scratch.firmware_rd_scratch,
+            &mut scratch,
             num_fw_chunks,
             fw_chunks.last().unwrap(),
         )
@@ -180,10 +179,9 @@ async fn basics() {
 #[cfg(not(feature = "force-full-r"))]
 #[tokio::test]
 async fn miss_any_one() {
-    use flash_algo::{
-        manager::{ScratchRam, DATA_REGION_OFFSET},
-        spi_flash::SpiFlash,
-    };
+    use crate::manager::{ScratchRam, DATA_REGION_OFFSET};
+
+    use crate::spi_flash::SpiFlash;
 
     let data_frags = fw_with_hdr()
         .chunks(SEGMENT_SIZE_BYTES)
@@ -220,7 +218,7 @@ async fn miss_any_one() {
     let mut scratch = ScratchRam::new();
 
     for to_skip in is_cov {
-        let mut flash = flash_algo_test::heap_flash::Flash::new(64 * 1024, 1024 * 1024);
+        let mut flash = Flash::new(64 * 1024, 1024 * 1024);
         let mut mgr = SlotManager::<4>::new(SLOT_SIZE);
 
         let init = mgr.app_boot_status(&mut flash, &mut scratch).await.unwrap();
@@ -256,12 +254,7 @@ async fn miss_any_one() {
                 continue;
             }
             let res = start
-                .write_segment(
-                    &mut flash,
-                    &mut scratch.firmware_rd_scratch,
-                    i as u32 + 1,
-                    ch,
-                )
+                .write_segment(&mut flash, &mut scratch, i as u32 + 1, ch)
                 .await
                 .unwrap();
             assert_eq!(res, WriteSegmentOutcome::Consumed);
@@ -273,7 +266,7 @@ async fn miss_any_one() {
             let res = start
                 .write_segment(
                     &mut flash,
-                    &mut scratch.firmware_rd_scratch,
+                    &mut scratch,
                     data_frags.len() as u32 + i as u32 + 1,
                     ch,
                 )
@@ -462,7 +455,7 @@ async fn could_it_recover() {
     for (test_i, (frag_skip_fn, parity_skip_fn, success, num_parity_needed)) in
         cases.iter().enumerate()
     {
-        let mut flash = flash_algo_test::heap_flash::Flash::new(64 * 1024, 1024 * 1024);
+        let mut flash = Flash::new(64 * 1024, 1024 * 1024);
         let mut mgr = SlotManager::<4>::new(SLOT_SIZE);
 
         let init = mgr.app_boot_status(&mut flash, &mut scratch).await.unwrap();
@@ -498,12 +491,7 @@ async fn could_it_recover() {
                 continue;
             }
             let res = start
-                .write_segment(
-                    &mut flash,
-                    &mut scratch.firmware_rd_scratch,
-                    i as u32 + 1,
-                    ch,
-                )
+                .write_segment(&mut flash, &mut scratch, i as u32 + 1, ch)
                 .await
                 .unwrap();
             assert!(matches!(
@@ -526,7 +514,7 @@ async fn could_it_recover() {
                 let res = start
                     .write_segment(
                         &mut flash,
-                        &mut scratch.firmware_rd_scratch,
+                        &mut scratch,
                         data_frags.len() as u32 + i as u32 + 1,
                         ch,
                     )

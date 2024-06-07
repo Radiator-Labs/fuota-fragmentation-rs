@@ -1,7 +1,7 @@
 use flash_algo::manager::{
     ActiveStatus, AppBootStatus, ScratchRam, SlotManager, WriteSegmentOutcome,
 };
-use flash_algo_test::heap_flash::Flash;
+use flash_algo::testutils::heap_flash::Flash;
 
 pub(crate) struct TestFuota {
     flash: Flash,
@@ -67,12 +67,7 @@ impl TestFuota {
         match self.opt_session {
             Some(ref mut session) => {
                 match session
-                    .write_segment(
-                        &mut self.flash,
-                        &mut self.scratch.firmware_rd_scratch,
-                        index as u32,
-                        fragment,
-                    )
+                    .write_segment(&mut self.flash, &mut self.scratch, index as u32, fragment)
                     .await
                 {
                     Ok(res) => match res {

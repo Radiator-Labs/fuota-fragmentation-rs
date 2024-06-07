@@ -75,7 +75,7 @@
 // #![deny(clippy::ref_patterns)] // coming in 1.70.0
 #![deny(clippy::rest_pat_in_fully_bound_structs)]
 #![deny(clippy::same_name_method)]
-#![deny(clippy::self_named_module_files)]
+#![allow(clippy::self_named_module_files)]
 #![deny(clippy::semicolon_outside_block)]
 #![allow(clippy::separated_literal_suffix)]
 #![deny(clippy::shadow_reuse)]
@@ -112,3 +112,8 @@ pub mod manager;
 pub mod protocol;
 pub mod ring;
 pub mod spi_flash;
+
+#[cfg(test)]
+mod tests;
+#[cfg(any(test, feature = "testutils"))]
+pub mod testutils;

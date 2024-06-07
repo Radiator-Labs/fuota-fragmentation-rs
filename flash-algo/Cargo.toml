@@ -18,6 +18,7 @@ maintenance = { status = "actively-developed" }
 #
 # This MAY be incompatible with some other FEC implementations found in the wild.
 force-full-r = []
+testutils = []
 
 # Enable standard library features. Typically used for testing/simulation.
 use-std = []
