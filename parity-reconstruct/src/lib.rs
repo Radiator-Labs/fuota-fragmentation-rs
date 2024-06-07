@@ -114,6 +114,16 @@ pub enum BlockResult {
     Done(usize),
 }
 
+/// Runtime data for the reconstructor
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ReconstructorData<U: BitViewSized, V: BitViewSized> {
+    n: usize,
+    l: usize,
+    done: BitArray<U>,
+    used: BitArray<V>,
+}
+
 /// Reconstructor for reconstructing data
 /// from an incomplete stream of blocks and
 /// parity data.
@@ -167,6 +177,27 @@ impl<
             datablocks,
             done: BitArray::ZERO,
             used: BitArray::ZERO,
+        }
+    }
+
+    /// Create a new reconstructor, continuing from a previous run.
+    /// The storage is assumed to be in the same state as before.
+    pub fn new_from_previous_run(
+        data: ReconstructorData<U, V>,
+        parity: Parity,
+        matrix: Matrix,
+        parityblocks: ParityData,
+        datablocks: Data,
+    ) -> Self {
+        Reconstructor {
+            n: data.n,
+            l: data.l,
+            parity,
+            matrix,
+            parityblocks,
+            datablocks,
+            done: data.done,
+            used: data.used,
         }
     }
 
@@ -364,6 +395,30 @@ impl<
                 Ok(BlockResult::NeedMore)
             }
         }
+    }
+
+    /// Deconstruct the objects to its component parts.
+    /// 
+    /// If you're in the middle of operations, you can do this and later continue with [Self::new_from_previous_run].
+    pub fn free(self) -> (ReconstructorData<U, V>, Parity, Matrix, ParityData, Data) {
+        let Self {
+            n,
+            l,
+            parity,
+            matrix,
+            parityblocks,
+            datablocks,
+            done,
+            used,
+        } = self;
+
+        (
+            ReconstructorData { n, l, done, used },
+            parity,
+            matrix,
+            parityblocks,
+            datablocks,
+        )
     }
 }
 
