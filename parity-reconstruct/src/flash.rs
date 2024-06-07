@@ -197,21 +197,26 @@ where
         Ok(Self { flash, flash_range })
     }
 
-    fn split_slice_addrs<const BLOCKSIZE: usize>(
+    fn split_slice_addrs<'data, const BLOCKSIZE: usize>(
+        &self,
         m: usize,
-        data: &mut [u8; BLOCKSIZE],
-    ) -> ((&mut [u8], u32), (&mut [u8], u32), (&mut [u8], u32)) {
+        data: &'data mut [u8; BLOCKSIZE],
+    ) -> (
+        (&'data mut [u8], u32),
+        (&'data mut [u8], u32),
+        (&'data mut [u8], u32),
+    ) {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
         assert!(BLOCKSIZE >= F::WRITE_SIZE);
 
-        let true_start_address = (m * BLOCKSIZE) as u32;
+        let true_start_address = self.flash_range.start + (m * BLOCKSIZE) as u32;
         let start_address_align_offset = true_start_address % F::WRITE_SIZE as u32;
-        let true_end_address = ((m + 1) * BLOCKSIZE) as u32;
+        let true_end_address = self.flash_range.start + ((m + 1) * BLOCKSIZE) as u32;
         let end_address_align_offset = true_end_address % F::WRITE_SIZE as u32;
 
         let padded_start_address = if start_address_align_offset != 0 {
-            true_start_address - F::WRITE_SIZE as u32 + start_address_align_offset
+            true_start_address - start_address_align_offset
         } else {
             true_start_address
         };
@@ -253,11 +258,11 @@ where
 
     fn store(&mut self, m: usize, mut data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
-            Self::split_slice_addrs(m, &mut data);
+            self.split_slice_addrs(m, &mut data);
 
         if !pad_start.is_empty() {
             let mut buffer = [0xFF; MAX_WORD_SIZE];
-            buffer[..MAX_WORD_SIZE - pad_start.len()].copy_from_slice(pad_start);
+            buffer[MAX_WORD_SIZE - pad_start.len()..].copy_from_slice(pad_start);
 
             self.flash
                 .write(start_addr, &buffer[MAX_WORD_SIZE - F::WRITE_SIZE..])?;
@@ -279,14 +284,14 @@ where
         let mut data = [0; BLOCKSIZE];
 
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
-            Self::split_slice_addrs(m, &mut data);
+            self.split_slice_addrs(m, &mut data);
 
         if !pad_start.is_empty() {
             let mut buffer = [0x00; MAX_WORD_SIZE];
             self.flash
                 .read(start_addr, &mut buffer[MAX_WORD_SIZE - F::WRITE_SIZE..])?;
 
-            pad_start.copy_from_slice(&buffer[..MAX_WORD_SIZE - pad_start.len()]);
+            pad_start.copy_from_slice(&buffer[MAX_WORD_SIZE - pad_start.len()..]);
         }
 
         self.flash.read(body_addr, body)?;
@@ -334,6 +339,32 @@ mod tests {
         assert_eq!(rec.handle_block(14, [6]).unwrap(), BlockResult::Done);
     }
 
+    #[test]
+    fn data_storage_valid() {
+        // 8-byte flash words with 9-byte block sizes
+        let mut ds =
+            FlashDataStorage::new(mem_flash::MemFlash::<1024, 128, 8>::new(0), 0x100..0x400)
+                .unwrap();
+
+        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29]).unwrap();
+        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19]).unwrap();
+
+        assert_eq!(&ds.flash.mem[..0x100], &[0; 0x100]);
+        assert_eq!(
+            &ds.flash.mem[0x100..][..9 * 3],
+            &[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25,
+                26, 27, 28, 29
+            ]
+        );
+        assert_eq!(&ds.flash.mem[0x100..][9 * 3..], &[0xFF; 0x300 - 9 * 3]);
+
+        assert_eq!(ds.get(0), Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(ds.get(1), Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
+        assert_eq!(ds.get(2), Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
+    }
+
     // Taken and adapted from: https://github.com/lulf/embedded-storage-inmemory
     mod mem_flash {
         use embedded_storage::nor_flash::{
@@ -342,7 +373,7 @@ mod tests {
 
         pub struct MemFlash<const SIZE: usize, const ERASE_SIZE: usize, const WRITE_SIZE: usize> {
             pub mem: [u8; SIZE],
-            pub written: [bool; SIZE],
+            pub written: [u8; SIZE],
         }
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,7 +385,7 @@ mod tests {
             pub const fn new(fill: u8) -> Self {
                 Self {
                     mem: [fill; SIZE],
-                    written: [false; SIZE],
+                    written: [0; SIZE],
                 }
             }
 
@@ -367,15 +398,18 @@ mod tests {
             fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), MemFlashError> {
                 let offset = offset as usize;
                 assert!(bytes.len() % WRITE_SIZE == 0);
-                assert!(offset % WRITE_SIZE == 0);
+                assert!(
+                    offset % WRITE_SIZE == 0,
+                    "offset: {offset}, WRITE_SIZE: {WRITE_SIZE}"
+                );
                 assert!(offset + bytes.len() <= SIZE);
 
                 for written in self.written.iter_mut().skip(offset).take(bytes.len()) {
-                    if *written {
-                        panic!("Written twice");
+                    if *written > 2 {
+                        panic!("Written thrice");
                     }
 
-                    *written = true;
+                    *written += 1;
                 }
 
                 for (mem_byte, new_byte) in self
@@ -402,7 +436,7 @@ mod tests {
                     ERASE_SIZE
                 );
                 for i in from..to {
-                    self.written[i] = false;
+                    self.written[i] = 0;
                     self.mem[i] = 0xFF;
                 }
                 Ok(())
