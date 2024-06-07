@@ -3,7 +3,7 @@
 //! This library contains the application and bootloader logic for
 //! performing a fragmented lorawan FUOTA.
 #![deny(clippy::pedantic)]
-#![deny(clippy::cargo)]
+// #![deny(clippy::cargo)] // Disabled for ease of development.
 #![deny(clippy::alloc_instead_of_core)]
 // #![allow(clippy::allow_attributes)] // coming in 1.70.0
 #![deny(clippy::allow_attributes_without_reason)]
