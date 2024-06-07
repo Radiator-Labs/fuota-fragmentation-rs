@@ -6,27 +6,27 @@
 use crate::bitcache::BitCache;
 use core::{assert, cfg};
 
-/// This function is a pseudo-random number generator, that is
-/// permuted every time the function is called.
-///
-/// ```rust
-/// use flash_algo::fragmentation::fragmentation_prbs23;
-///
-/// // Start with an initial value, generate four numbers
-/// let mut x = 1001;
-/// let mut buf = [0u32; 4];
-/// buf.iter_mut().for_each(|w| {
-///    x = fragmentation_prbs23(x);
-///    *w = x;
-/// });
-///
-/// assert_eq!(
-///     &buf,
-///     &[0x0000_01F4, 0x0040_00FA, 0x0060_007D, 0x0030_003E],
-/// );
-/// ```
+// This function is a pseudo-random number generator, that is
+// permuted every time the function is called.
+//
+// ```rust
+// use flash_algo::fragmentation::fragmentation_prbs23;
+//
+// // Start with an initial value, generate four numbers
+// let mut x = 1001;
+// let mut buf = [0u32; 4];
+// buf.iter_mut().for_each(|w| {
+//    x = fragmentation_prbs23(x);
+//    *w = x;
+// });
+//
+// assert_eq!(
+//     &buf,
+//     &[0x0000_01F4, 0x0040_00FA, 0x0060_007D, 0x0030_003E],
+// );
+// ```
 #[must_use]
-pub fn fragmentation_prbs23(x: u32) -> u32 {
+pub(crate) fn fragmentation_prbs23(x: u32) -> u32 {
     let b0 = x & 1;
     let b1 = (x & 0x20) >> 5_u32;
     (x / 2) + ((b0 ^ b1) << 22_u32)

@@ -220,7 +220,7 @@ pub(crate) fn try_take_n(bytes: &[u8], n: usize) -> Option<(&[u8], &[u8])> {
 /// Can report an error if flash write operation fails
 #[inline]
 #[must_use]
-pub fn try_take_u32(bytes: &[u8]) -> Option<(u32, &[u8])> {
+pub(crate) fn try_take_u32(bytes: &[u8]) -> Option<(u32, &[u8])> {
     let (now, later) = try_take_n(bytes, 4)?;
     let mut u32_bytes = [0_u8; 4];
     u32_bytes.copy_from_slice(now);
@@ -249,7 +249,7 @@ pub(crate) fn try_write_n<'a>(
 /// # Errors
 /// Can report an error if flash write operation fails
 #[inline]
-pub fn try_write_u32(val: u32, buf: &mut [u8]) -> Result<&mut [u8], FlashReprError> {
+pub(crate) fn try_write_u32(val: u32, buf: &mut [u8]) -> Result<&mut [u8], FlashReprError> {
     let bytes = val.to_le_bytes();
     try_write_n(&bytes, buf)
 }
@@ -526,7 +526,7 @@ pub enum TotalStatus {
 }
 
 #[must_use]
-pub fn total_status(hdr: &SlotHeader) -> TotalStatus {
+pub(crate) fn total_status(hdr: &SlotHeader) -> TotalStatus {
     let slot_id_valid = hdr.seq_no.0 != u32::MAX;
 
     #[allow(clippy::pattern_type_mismatch)] // TODO: eliminate this allow

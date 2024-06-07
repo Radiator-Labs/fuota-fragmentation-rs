@@ -1317,7 +1317,7 @@ pub async fn read_header_from_slot<T: SpiFlash>(
 ///
 /// # Errors
 /// Reports if SPI Flash activities fail
-pub async fn check_crc_from_index<T: SpiFlash>(
+pub(crate) async fn check_crc_from_index<T: SpiFlash>(
     flash: &mut T,
     scratch: &mut ScratchRam,
     segment_size_option: Option<usize>,
@@ -1418,7 +1418,7 @@ pub async fn check_crc_from_index<T: SpiFlash>(
 /// Calculate the NEXT sequence number, avoiding the invalid
 /// value of `u32::MAX`, and handling wraparound.
 #[must_use]
-pub fn next_seq(cur: u32) -> u32 {
+pub(crate) fn next_seq(cur: u32) -> u32 {
     match cur.wrapping_add(1) {
         u32::MAX => 0,
         other => other,
