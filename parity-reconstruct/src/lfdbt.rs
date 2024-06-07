@@ -15,7 +15,7 @@ impl LfdbtParity {
     }
 }
 
-fn prbs23(x: usize) -> usize {
+fn prbs23(x: u32) -> u32 {
     let b0 = x & 1;
     let b1 = (x & 32) >> 5;
     (x >> 1) + ((b0 ^ b1) << 22)
@@ -32,12 +32,12 @@ impl<U: BitViewSized> ParityMatrix<U> for LfdbtParity {
             let row_index = m - self.n;
             let jiggle = if self.n.count_ones() == 1 { 1 } else { 0 };
 
-            let mut x = 1 + 1001 * row_index;
+            let mut x = 1 + 1001 * (row_index as u32);
             let mut out = BitArray::<U>::ZERO;
             for _ in 0..(self.n / 2) {
                 let r = loop {
                     x = prbs23(x);
-                    let cand = x % (self.n + jiggle);
+                    let cand = (x % ((self.n + jiggle) as u32)) as usize;
                     if cand < self.n {
                         break cand;
                     }
@@ -52,8 +52,6 @@ impl<U: BitViewSized> ParityMatrix<U> for LfdbtParity {
 
 #[cfg(test)]
 mod tests {
-    use bitvec::order::Lsb0;
-
     use super::*;
 
     #[test]
