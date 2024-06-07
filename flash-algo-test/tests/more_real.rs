@@ -128,12 +128,7 @@ async fn basics() {
 
     for (i, ch) in fw_chunks[..fw_chunks.len() - 1].iter().enumerate() {
         let res = start
-            .write_segment(
-                &mut flash,
-                &mut scratch.firmware_rd_scratch,
-                i as u32 + 1,
-                ch,
-            )
+            .write_segment(&mut flash, &mut scratch, i as u32 + 1, ch)
             .await
             .unwrap();
         assert_eq!(res, WriteSegmentOutcome::Consumed);
@@ -141,7 +136,7 @@ async fn basics() {
     let res = start
         .write_segment(
             &mut flash,
-            &mut scratch.firmware_rd_scratch,
+            &mut scratch,
             num_fw_chunks,
             fw_chunks.last().unwrap(),
         )
@@ -256,12 +251,7 @@ async fn miss_any_one() {
                 continue;
             }
             let res = start
-                .write_segment(
-                    &mut flash,
-                    &mut scratch.firmware_rd_scratch,
-                    i as u32 + 1,
-                    ch,
-                )
+                .write_segment(&mut flash, &mut scratch, i as u32 + 1, ch)
                 .await
                 .unwrap();
             assert_eq!(res, WriteSegmentOutcome::Consumed);
@@ -273,7 +263,7 @@ async fn miss_any_one() {
             let res = start
                 .write_segment(
                     &mut flash,
-                    &mut scratch.firmware_rd_scratch,
+                    &mut scratch,
                     data_frags.len() as u32 + i as u32 + 1,
                     ch,
                 )
@@ -498,12 +488,7 @@ async fn could_it_recover() {
                 continue;
             }
             let res = start
-                .write_segment(
-                    &mut flash,
-                    &mut scratch.firmware_rd_scratch,
-                    i as u32 + 1,
-                    ch,
-                )
+                .write_segment(&mut flash, &mut scratch, i as u32 + 1, ch)
                 .await
                 .unwrap();
             assert!(matches!(
@@ -526,7 +511,7 @@ async fn could_it_recover() {
                 let res = start
                     .write_segment(
                         &mut flash,
-                        &mut scratch.firmware_rd_scratch,
+                        &mut scratch,
                         data_frags.len() as u32 + i as u32 + 1,
                         ch,
                     )

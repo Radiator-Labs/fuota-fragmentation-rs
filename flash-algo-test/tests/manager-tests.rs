@@ -179,7 +179,7 @@ mod test {
         for i in 0..(64 + 32) {
             buf.iter_mut().for_each(|b| *b = bad_rand() as u8);
             start
-                .write_segment(&mut flash, &mut scratch.firmware_rd_scratch, i + 1, &buf)
+                .write_segment(&mut flash, &mut scratch, i + 1, &buf)
                 .await
                 .unwrap();
         }
@@ -200,7 +200,7 @@ mod test {
         for i in 0..(64 + 32) {
             buf.iter_mut().for_each(|b| *b = bad_rand() as u8);
             start
-                .write_segment(&mut flash, &mut scratch.firmware_rd_scratch, i + 1, &buf)
+                .write_segment(&mut flash, &mut scratch, i + 1, &buf)
                 .await
                 .unwrap();
         }
@@ -210,12 +210,7 @@ mod test {
 
         // Writing more data fails
         let res = start
-            .write_segment(
-                &mut flash,
-                &mut scratch.firmware_rd_scratch,
-                1 + (64 + 16384),
-                &buf,
-            )
+            .write_segment(&mut flash, &mut scratch, 1 + (64 + 16384), &buf)
             .await;
         assert_eq!(res, Err(SpiFlashError::OutOfBounds));
     }

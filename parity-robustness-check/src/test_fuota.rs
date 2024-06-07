@@ -67,12 +67,7 @@ impl TestFuota {
         match self.opt_session {
             Some(ref mut session) => {
                 match session
-                    .write_segment(
-                        &mut self.flash,
-                        &mut self.scratch.firmware_rd_scratch,
-                        index as u32,
-                        fragment,
-                    )
+                    .write_segment(&mut self.flash, &mut self.scratch, index as u32, fragment)
                     .await
                 {
                     Ok(res) => match res {

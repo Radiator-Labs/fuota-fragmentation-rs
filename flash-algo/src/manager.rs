@@ -745,6 +745,18 @@ impl ActiveStatus {
     pub async fn write_segment<T: SpiFlash>(
         &mut self,
         flash: &mut T,
+        scratch: &mut ScratchRam,
+        segment_1idx: u32,
+        bytes: &[u8],
+    ) -> Result<WriteSegmentOutcome, SpiFlashError<T::Error>> {
+        self.write_segment_internal(flash, &mut scratch.firmware_rd_scratch, segment_1idx, bytes)
+            .await
+    }
+
+    // Actual implementation of
+    async fn write_segment_internal<T: SpiFlash>(
+        &mut self,
+        flash: &mut T,
         read_scratch: &mut [u8],
         segment_1idx: u32,
         bytes: &[u8],
@@ -1029,7 +1041,7 @@ impl ActiveStatus {
                 // By now, we should have now recovered the frame, write it using
                 // the normal writing process so it is marked as received.
                 #[allow(clippy::cast_possible_truncation)]
-                self.write_segment(
+                self.write_segment_internal(
                     flash,
                     firmware_rd_scratch,
                     fwi as u32 + 1,
@@ -1176,24 +1188,24 @@ async fn fill_bitcache<'a, T: SpiFlash>(
 #[allow(clippy::exhaustive_structs)]
 pub struct ScratchRam {
     /// One array to hold the list of all received firmware segments
-    pub received_firmware_scratch: BitCache,
+    pub(crate) received_firmware_scratch: BitCache,
     /// One array to hold the list of all received parity segments
-    pub received_parity_scratch: BitCache,
+    pub(crate) received_parity_scratch: BitCache,
     /// One array to hold a single "does this parity segment correspond
     ///   to a given data segment" row.
-    pub parity_mask_scratch: BitCache,
+    pub(crate) parity_mask_scratch: BitCache,
 
     /// An array to page-in parity data when loading a [`BitCache`]
     /// from flash data
-    pub parity_temp_page: [u8; Self::PARITY_TEMP_LEN],
+    pub(crate) parity_temp_page: [u8; Self::PARITY_TEMP_LEN],
 
     /// A single read segment
-    pub firmware_rd_scratch: [u8; MAX_SEGMENT_SIZE],
+    pub(crate) firmware_rd_scratch: [u8; MAX_SEGMENT_SIZE],
     /// A single write segment
-    pub firmware_wr_scratch: [u8; MAX_SEGMENT_SIZE],
+    pub(crate) firmware_wr_scratch: [u8; MAX_SEGMENT_SIZE],
 
     /// For one header
-    pub header_scratch: [u8; SlotHeader::SIZE],
+    pub(crate) header_scratch: [u8; SlotHeader::SIZE],
 }
 
 impl Default for ScratchRam {
