@@ -77,8 +77,13 @@ impl<const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE
 }
 
 fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
+    // This fuzzer simulates reconstruction of data from a subset of blocks
+    // which is received. The data is provided in testcase.0, with testcase.1
+    // marking which blocks are received and which not.
+
     let data = &testcase.0;
     let received: &BitSlice<_, Lsb0> = BitSlice::from_slice(testcase.1);
+    // Ensure there is at least a chance of success
     if data.len() < 2 || data.len() > 1024 || data.len() + 16 > received.count_ones() {
         return;
     }
@@ -93,9 +98,14 @@ fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
         WrappedBlockStorage(datastore.clone()),
     );
 
+    // Which data blocks have been included in the blocks provided sofar?
+    // we use this to check that there isn't a very obvious gap in what was 
+    // provided.
     let mut total: BitArray<[usize; 1024/size_of::<usize>()]> = BitArray::ZERO;
+
     for (i, provide) in received.iter().enumerate() {
         if *provide {
+            // Block i isn't simulated as lost, so construct it.
             let row: BitArray<[usize; 1024/size_of::<usize>()]> = matrix.row(i);
             total |= row;
             let mut block = [0;4];
@@ -110,7 +120,7 @@ fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
             match reconstructor.handle_block(i, block) {
                 BlockResult::NeedMore => {},
                 BlockResult::TooManyMissing => panic!("Should always fit"),
-                BlockResult::Done => {
+                BlockResult::Done(_) => {
                     let store = datastore.borrow();
                     assert_eq!(&store.data, data);
                     assert!(!store.used.iter().any(|v| !*v));
