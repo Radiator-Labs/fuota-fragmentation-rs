@@ -1,7 +1,7 @@
 use flash_algo::manager::{
     ActiveStatus, AppBootStatus, ScratchRam, SlotManager, WriteSegmentOutcome,
 };
-use flash_algo_test::heap_flash::Flash;
+use flash_algo::testutils::heap_flash::Flash;
 
 pub(crate) struct TestFuota {
     flash: Flash,

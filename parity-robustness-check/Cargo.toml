@@ -18,11 +18,10 @@ categories = [
 ]
 
 [features]
-force-full-r = ["flash-algo/force-full-r", "flash-algo-test/force-full-r"]
+force-full-r = ["flash-algo/force-full-r"]
 
 [dependencies]
-flash-algo = { path = "../flash-algo" }
-flash-algo-test = { path = "../flash-algo-test" }
+flash-algo = { path = "../flash-algo", features = ["testutils"] }
 
 async-std = { version = "1.2", features = ["attributes"] }
 clap = { version = "4.5.4", features = ["derive", "std"] }

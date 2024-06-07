@@ -6,9 +6,11 @@
 //! as multiple writes to the same byte without an erase (which could lead to corrupted
 //! values).
 
-use flash_algo::spi_flash::{SpiFlash, SpiFlashError};
+extern crate std;
+use crate::spi_flash::{SpiFlash, SpiFlashError};
 #[cfg(feature = "rtt_target")]
 use rtt_target::rprintln;
+use std::{format, prelude::rust_2021::*, vec};
 
 /// It is typical that individual write commands cannot span more than a single page
 /// at a time. Most commonly, flash parts have a page size of 256 bytes.
@@ -74,7 +76,7 @@ impl Flash {
     /// of `BYTES_PER_PAGE`, which is 256.
     ///
     /// ```rust
-    /// use flash_algo_test::heap_flash::Flash;
+    /// use flash_algo::testutils::heap_flash::Flash;
     ///
     /// // Create a 1MiB flash part with 64KiB blocks
     /// let flash = Flash::new(64 * 1024, 1024 * 1024);
@@ -117,7 +119,7 @@ impl Flash {
     /// This is intended for use with snapshot tests.
     ///
     /// ```rust
-    /// use flash_algo_test::heap_flash::Flash;
+    /// use flash_algo::testutils::heap_flash::Flash;
     /// use flash_algo::spi_flash::SpiFlash;
     ///
     /// # tokio::runtime::Runtime::new().unwrap().block_on(async {

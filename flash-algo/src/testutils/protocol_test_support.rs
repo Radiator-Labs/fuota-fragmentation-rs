@@ -1,4 +1,4 @@
-use flash_algo::protocol::{
+use crate::protocol::{
     BootOutcome, FlashRepr, Kind, NumberOfSegments, SegmentSize, SequenceNumber, SlotHeader,
     WriteExtStatus, WriteIntStatus,
 };
