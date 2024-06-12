@@ -8,7 +8,7 @@
 //! to handle at least N bits (U) or L bits (V). This can't be done
 //! directly due to limitations in the rust type system.
 #![no_std]
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
 
 #[cfg(feature = "flash")]
@@ -38,6 +38,7 @@ pub trait ParityMatrix<U: BitViewSized> {
 /// Note: the maximum number of missing data blocks that we
 /// can handle is assumed to be BitArray<V>.
 pub trait MatrixStorage<V: BitViewSized> {
+    /// The error type of the storage
     type Error;
     /// Store a row of the parity reconstruction matrix.
     ///
@@ -60,6 +61,7 @@ pub trait MatrixStorage<V: BitViewSized> {
 
 /// Storage trait for parity blocks
 pub trait ParityStorage<const BLOCKSIZE: usize> {
+    /// The error type of the storage
     type Error;
     /// Store a parity block.
     ///
@@ -78,6 +80,7 @@ pub trait ParityStorage<const BLOCKSIZE: usize> {
 
 /// Storage trait for reconstructed data.
 pub trait DataStorage<const BLOCKSIZE: usize> {
+    /// The error type of the storage
     type Error;
     /// Store a newly received or reconstructed block.
     ///
@@ -90,10 +93,14 @@ pub trait DataStorage<const BLOCKSIZE: usize> {
     fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
 }
 
+/// The error type of the reconstructor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error<M, P, D> {
+    /// The matrix storage returned an error
     MatrixStorageError(M),
+    /// The parity storage returned an error
     ParityStorageError(P),
+    /// The data storage returned an error
     DataStorageError(D),
 }
 
