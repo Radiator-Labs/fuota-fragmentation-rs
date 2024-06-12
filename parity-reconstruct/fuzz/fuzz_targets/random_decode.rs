@@ -4,7 +4,10 @@ use std::{cell::RefCell, iter::repeat, mem::size_of, rc::Rc};
 
 use bitvec::{array::BitArray, order::Lsb0, slice::BitSlice, view::BitViewSized};
 use libfuzzer_sys::fuzz_target;
-use parity_reconstruct::{lfdbt::LfdbtParity, BlockResult, DataStorage, MatrixStorage, ParityMatrix, ParityStorage, Reconstructor};
+use parity_reconstruct::{
+    lfdbt::LfdbtParity, BlockResult, DataStorage, MatrixStorage, ParityMatrix, ParityStorage,
+    Reconstructor,
+};
 
 struct TestMatrixStorage<V: BitViewSized> {
     data: Vec<BitArray<V>>,
@@ -19,16 +22,19 @@ impl<V: BitViewSized> TestMatrixStorage<V> {
 }
 
 impl<V: BitViewSized> MatrixStorage<V> for TestMatrixStorage<V> {
-    fn set_row(&mut self, m: usize, data: BitArray<V>) {
+    type Error = core::convert::Infallible;
+
+    fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error> {
         assert!(data[m]);
         for (i, el) in data.iter().enumerate() {
             assert!(i <= m || !el)
         }
         self.data[m] = data;
+        Ok(())
     }
 
-    fn row(&self, m: usize) -> BitArray<V> {
-        self.data[m].clone()
+    fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error> {
+        Ok(self.data[m].clone())
     }
 }
 
@@ -49,34 +55,40 @@ impl<const BLOCKSIZE: usize> BlockStorage<BLOCKSIZE> {
 struct WrappedBlockStorage<const BLOCKSIZE: usize>(Rc<RefCell<BlockStorage<BLOCKSIZE>>>);
 
 impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for WrappedBlockStorage<BLOCKSIZE> {
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) {
+    type Error = core::convert::Infallible;
+
+    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         let mut this = self.0.borrow_mut();
         assert!(!this.used[m]);
         this.data[m] = data;
         this.used[m] = true;
+        Ok(())
     }
 
-    fn get(&self, m: usize) -> [u8; BLOCKSIZE] {
+    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         let this = self.0.borrow();
         assert!(this.used[m]);
-        this.data[m]
+        Ok(this.data[m])
     }
 }
 
 impl<const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) {
+    type Error = core::convert::Infallible;
+
+    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         assert!(!self.used[m]);
         self.data[m] = data;
         self.used[m] = true;
+        Ok(())
     }
 
-    fn get(&self, m: usize) -> [u8; BLOCKSIZE] {
+    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         assert!(self.used[m]);
-        self.data[m]
+        Ok(self.data[m])
     }
 }
 
-fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
+fuzz_target!(|testcase: (Vec<[u8; 4]>, &[u8])| {
     // This fuzzer simulates reconstruction of data from a subset of blocks
     // which is received. The data is provided in testcase.0, with testcase.1
     // marking which blocks are received and which not.
@@ -90,7 +102,15 @@ fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
 
     let matrix = LfdbtParity::new(data.len());
     let datastore = Rc::new(RefCell::new(BlockStorage::new(data.len())));
-    let mut reconstructor = Reconstructor::<_, _, _, _, 4, [usize; 1024/size_of::<usize>()], [usize; 1024/size_of::<usize>()] >::new(
+    let mut reconstructor = Reconstructor::<
+        _,
+        _,
+        _,
+        _,
+        4,
+        [usize; 1024 / size_of::<usize>()],
+        [usize; 1024 / size_of::<usize>()],
+    >::new(
         data.len(),
         LfdbtParity::new(data.len()),
         TestMatrixStorage::new(data.len()),
@@ -99,16 +119,16 @@ fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
     );
 
     // Which data blocks have been included in the blocks provided sofar?
-    // we use this to check that there isn't a very obvious gap in what was 
+    // we use this to check that there isn't a very obvious gap in what was
     // provided.
-    let mut total: BitArray<[usize; 1024/size_of::<usize>()]> = BitArray::ZERO;
+    let mut total: BitArray<[usize; 1024 / size_of::<usize>()]> = BitArray::ZERO;
 
     for (i, provide) in received.iter().enumerate() {
         if *provide {
             // Block i isn't simulated as lost, so construct it.
-            let row: BitArray<[usize; 1024/size_of::<usize>()]> = matrix.row(i);
+            let row: BitArray<[usize; 1024 / size_of::<usize>()]> = matrix.row(i);
             total |= row;
-            let mut block = [0;4];
+            let mut block = [0; 4];
             for (j, take) in row.iter().enumerate().take(data.len()) {
                 if *take {
                     for (blockel, datael) in block.iter_mut().zip(data[j].iter()) {
@@ -117,8 +137,8 @@ fuzz_target!(|testcase: (Vec<[u8;4]>, &[u8])| {
                 }
             }
 
-            match reconstructor.handle_block(i, block) {
-                BlockResult::NeedMore => {},
+            match reconstructor.handle_block(i, block).unwrap() {
+                BlockResult::NeedMore => {}
                 BlockResult::TooManyMissing => panic!("Should always fit"),
                 BlockResult::Done(_) => {
                     let store = datastore.borrow();
