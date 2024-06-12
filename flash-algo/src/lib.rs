@@ -106,7 +106,7 @@
 #![deny(clippy::verbose_file_reads)]
 #![deny(clippy::wildcard_enum_match_arm)]
 
-pub mod bitcache;
+pub(crate) mod bitcache;
 pub mod fragmentation;
 pub mod manager;
 pub mod protocol;

@@ -65,6 +65,7 @@ use crate::{
     ring::{get_next_seq_no, get_ordered_headers, get_two_newest, IndexedHeader, TwoHdrs},
     spi_flash::{SpiFlash, SpiFlashError},
 };
+use bitvec::array::BitArray;
 use core::iter::Take;
 use crc::{Crc, CRC_32_CKSUM};
 
@@ -981,7 +982,7 @@ impl ActiveStatus {
                 // This index is interesting to us if the parity segment
                 // DOES cover this segment AND we have not received this
                 // data segment.
-                let is_missing = p && !f;
+                let is_missing = *p && !f;
 
                 #[allow(unused_variables)]
                 match (is_missing, missing) {
@@ -1191,7 +1192,7 @@ pub struct ScratchRam {
     pub(crate) received_parity_scratch: BitCache,
     /// One array to hold a single "does this parity segment correspond
     ///   to a given data segment" row.
-    pub(crate) parity_mask_scratch: BitCache,
+    pub(crate) parity_mask_scratch: BitArray<[u8; MAX_SEGMENTS / 8]>,
 
     /// An array to page-in parity data when loading a [`BitCache`]
     /// from flash data
@@ -1222,7 +1223,7 @@ impl ScratchRam {
         Self {
             received_firmware_scratch: BitCache::new(),
             received_parity_scratch: BitCache::new(),
-            parity_mask_scratch: BitCache::new(),
+            parity_mask_scratch: BitArray::ZERO,
             firmware_rd_scratch: [0_u8; MAX_SEGMENT_SIZE],
             firmware_wr_scratch: [0_u8; MAX_SEGMENT_SIZE],
             header_scratch: [0_u8; SlotHeader::SIZE],
