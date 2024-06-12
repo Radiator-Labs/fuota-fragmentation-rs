@@ -9,11 +9,16 @@ use crate::{DataStorage, MatrixStorage, ParityStorage};
 
 const MAX_WORD_SIZE: usize = 32;
 
+/// A shared flash impl that is made for use within a single thread.
+///
+/// It implements the [embedded_storage] traits and uses a refcell internally.
+#[derive(Debug)]
 pub struct SharedFlash<'a, F> {
     flash: RefCell<&'a mut F>,
 }
 
 impl<'a, F> SharedFlash<'a, F> {
+    /// Create a new instance of the shared flash
     pub fn new(flash: RefCell<&'a mut F>) -> Self {
         Self { flash }
     }
@@ -60,6 +65,8 @@ impl<'a, F: embedded_storage::nor_flash::MultiwriteNorFlash>
 {
 }
 
+/// An implementation for the [MatrixStorage] trait.
+/// It stores the matrix data in flash relatively efficiently.
 pub struct FlashMatrixStorage<F>
 where
     F: embedded_storage::nor_flash::NorFlash,
@@ -72,6 +79,7 @@ impl<F> FlashMatrixStorage<F>
 where
     F: embedded_storage::nor_flash::NorFlash,
 {
+    /// Create a new instance
     pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
@@ -153,6 +161,8 @@ where
     }
 }
 
+/// Implementation of the [ParityStorage] trait.
+/// It stores the parity data in flash.
 pub struct FlashParityStorage<F>
 where
     F: embedded_storage::nor_flash::NorFlash,
@@ -165,6 +175,7 @@ impl<F> FlashParityStorage<F>
 where
     F: embedded_storage::nor_flash::NorFlash,
 {
+    /// Create a new instance
     pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
@@ -235,6 +246,9 @@ where
     }
 }
 
+/// Implementation of the [DataStorage] trait.
+/// It stores the data in flash without any internal padding.
+/// This helps bootloaders so they can just copy the data over without further processing.
 pub struct FlashDataStorage<F>
 where
     F: embedded_storage::nor_flash::MultiwriteNorFlash,
@@ -247,6 +261,7 @@ impl<F> FlashDataStorage<F>
 where
     F: embedded_storage::nor_flash::MultiwriteNorFlash,
 {
+    /// Create a new instance
     pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
