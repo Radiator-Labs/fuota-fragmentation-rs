@@ -11,20 +11,20 @@ use crate::{
 
 #[allow(clippy::exhaustive_structs)]
 #[derive(Debug)]
-pub struct IndexedHeader {
+pub(crate) struct IndexedHeader {
     pub idx: usize,
     pub hdr: Option<SlotHeader>,
 }
 
 #[allow(clippy::exhaustive_structs)]
 #[derive(Debug)]
-pub struct TwoHdrs<'a> {
+pub(crate) struct TwoHdrs<'a> {
     pub older: &'a IndexedHeader,
     pub newer: &'a IndexedHeader,
 }
 
 #[must_use]
-pub fn get_two_newest(sli: &[IndexedHeader]) -> Option<TwoHdrs<'_>> {
+pub(crate) fn get_two_newest(sli: &[IndexedHeader]) -> Option<TwoHdrs<'_>> {
     let mut iter = sli.iter().rev();
     let newer = loop {
         match iter.next() {
@@ -40,7 +40,7 @@ pub fn get_two_newest(sli: &[IndexedHeader]) -> Option<TwoHdrs<'_>> {
 }
 
 #[must_use]
-pub fn get_next_seq_no(sli: &[IndexedHeader]) -> u32 {
+pub(crate) fn get_next_seq_no(sli: &[IndexedHeader]) -> u32 {
     sli.iter()
         .rev()
         .find_map(|ih| ih.hdr.as_ref().map(|h| next_seq(h.seq_no.0)))
@@ -53,7 +53,7 @@ pub fn get_next_seq_no(sli: &[IndexedHeader]) -> u32 {
 ///
 /// # Panics
 /// Panics if hdrs is empty. TODO: eliminate this panic
-pub async fn get_ordered_headers<T: SpiFlash, const N: usize>(
+pub(crate) async fn get_ordered_headers<T: SpiFlash, const N: usize>(
     flash: &mut T,
     slot_size: usize,
     scratch: &mut ScratchRam,
