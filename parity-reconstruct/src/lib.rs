@@ -43,9 +43,9 @@ pub trait MatrixStorage<V: BitViewSized> {
     ///
     /// Called at most once for each value of m
     ///
-    /// When called for m, data has the following guarantees:
-    /// - `data[m] = true`
-    /// - `data[i] = false for all i > m`
+    /// When called for m, data has the following guarantees
+    /// - `data[m]` = true
+    /// - `data[i]` = false for all i > m
     ///
     /// m is smaller than BitArray<V>::len()
     fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error>;
@@ -398,7 +398,7 @@ impl<
     }
 
     /// Deconstruct the objects to its component parts.
-    /// 
+    ///
     /// If you're in the middle of operations, you can do this and later continue with [Self::new_from_previous_run].
     pub fn free(self) -> (ReconstructorData<U, V>, Parity, Matrix, ParityData, Data) {
         let Self {

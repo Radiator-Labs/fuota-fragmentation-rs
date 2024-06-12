@@ -73,9 +73,27 @@ where
     F: embedded_storage::nor_flash::NorFlash,
 {
     pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
+        assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
+        assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
+
         flash.erase(flash_range.start, flash_range.end)?;
 
         Ok(Self { flash, flash_range })
+    }
+
+    /// Returns the size of the row in bytes as it can be stored in flash (including padding)
+    const fn flash_row_size(m: usize) -> usize {
+        let byte_size = (m + 1).next_multiple_of(8) / 8;
+        byte_size.next_multiple_of(F::WRITE_SIZE)
+    }
+
+    fn flash_row_address_offset(m: usize) -> u32 {
+        let mut offset = 0;
+        for i in 0..m {
+            offset += Self::flash_row_size(i) as u32;
+        }
+
+        offset
     }
 }
 
@@ -86,11 +104,52 @@ where
     type Error = F::Error;
 
     fn set_row(&mut self, m: usize, data: BitArray<[u8; N]>) -> Result<(), Self::Error> {
-        todo!()
+        let address = self.flash_range.start + Self::flash_row_address_offset(m);
+        let data_len = Self::flash_row_size(m);
+
+        let (data_body, data_padded) = if data_len > N {
+            data.as_raw_slice().split_at(data_len - F::WRITE_SIZE)
+        } else {
+            (&data.as_raw_slice()[..data_len], &[][..])
+        };
+
+        self.flash.write(address, data_body)?;
+
+        if !data_padded.is_empty() {
+            let mut buffer = [0; MAX_WORD_SIZE];
+            buffer[..data_padded.len()].copy_from_slice(data_padded);
+            self.flash
+                .write(address + data_body.len() as u32, &buffer[..F::WRITE_SIZE])?;
+        }
+
+        Ok(())
     }
 
     fn row(&mut self, m: usize) -> Result<BitArray<[u8; N]>, Self::Error> {
-        todo!()
+        let address = self.flash_range.start + Self::flash_row_address_offset(m);
+        let data_len = Self::flash_row_size(m);
+
+        let mut data = BitArray::ZERO;
+
+        let (data_body, data_padded) = if data_len > N {
+            data.as_raw_mut_slice()
+                .split_at_mut(data_len - F::WRITE_SIZE)
+        } else {
+            (&mut data.as_raw_mut_slice()[..data_len], &mut [][..])
+        };
+
+        self.flash.read(address, data_body)?;
+
+        if !data_padded.is_empty() {
+            let mut buffer = [0; MAX_WORD_SIZE];
+            self.flash.read(
+                address + data_body.len() as u32,
+                &mut buffer[..F::WRITE_SIZE],
+            )?;
+            data_padded.copy_from_slice(&buffer[..data_padded.len()]);
+        }
+
+        Ok(data)
     }
 }
 
@@ -107,6 +166,9 @@ where
     F: embedded_storage::nor_flash::NorFlash,
 {
     pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
+        assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
+        assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
+
         flash.erase(flash_range.start, flash_range.end)?;
 
         Ok(Self { flash, flash_range })
@@ -122,9 +184,6 @@ where
     type Error = F::Error;
 
     fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
-        assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
-        assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
-
         let rounded_up_len = data.len().next_multiple_of(F::WRITE_SIZE);
         let rounded_down_len = previous_multiple_of(data.len(), F::WRITE_SIZE);
         let offset = m * rounded_up_len;
@@ -151,11 +210,8 @@ where
     fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         let mut data = [0; BLOCKSIZE];
 
-        assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
-        assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
-
-        let rounded_up_len = data.len().next_multiple_of(F::READ_SIZE);
-        let rounded_down_len = previous_multiple_of(data.len(), F::READ_SIZE);
+        let rounded_up_len = data.len().next_multiple_of(F::WRITE_SIZE);
+        let rounded_down_len = previous_multiple_of(data.len(), F::WRITE_SIZE);
         let offset = m * rounded_up_len;
 
         // Split so that data0 can be read directly. Data1 needs to be padding if not empty
@@ -192,6 +248,9 @@ where
     F: embedded_storage::nor_flash::MultiwriteNorFlash,
 {
     pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
+        assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
+        assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
+
         flash.erase(flash_range.start, flash_range.end)?;
 
         Ok(Self { flash, flash_range })
@@ -206,10 +265,6 @@ where
         (&'data mut [u8], u32),
         (&'data mut [u8], u32),
     ) {
-        assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
-        assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
-        assert!(BLOCKSIZE >= F::WRITE_SIZE);
-
         let true_start_address = self.flash_range.start + (m * BLOCKSIZE) as u32;
         let start_address_align_offset = true_start_address % F::WRITE_SIZE as u32;
         let true_end_address = self.flash_range.start + ((m + 1) * BLOCKSIZE) as u32;
@@ -257,6 +312,8 @@ where
     type Error = F::Error;
 
     fn store(&mut self, m: usize, mut data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+        assert!(BLOCKSIZE >= F::WRITE_SIZE);
+
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
             self.split_slice_addrs(m, &mut data);
 
@@ -319,6 +376,8 @@ const fn previous_multiple_of(val: usize, rhs: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
     use crate::{tests::TestParity, BlockResult, Reconstructor};
 
     use super::*;
@@ -327,7 +386,7 @@ mod tests {
     fn simple_reconstruction_test() {
         let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
             4,
-            LfdbtParity::new(4),
+            TestParity::<4>,
             FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400).unwrap(),
             FlashParityStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400).unwrap(),
             FlashDataStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400).unwrap(),
@@ -359,6 +418,72 @@ mod tests {
             ]
         );
         assert_eq!(&ds.flash.mem[0x100..][9 * 3..], &[0xFF; 0x300 - 9 * 3]);
+
+        assert_eq!(ds.get(0), Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(ds.get(1), Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
+        assert_eq!(ds.get(2), Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
+    }
+
+    #[test]
+    fn matrix_storage_valid() {
+        // 8-byte flash words with 9-byte block sizes
+        let mut ds =
+            FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 8>::new(0), 0x100..0x400)
+                .unwrap();
+
+        ds.set_row(0, BitArray::new([1, 0, 0, 0, 0, 0, 0, 0, 0]))
+            .unwrap();
+        ds.set_row(2, BitArray::new([4, 0, 0, 0, 0, 0, 0, 0, 0]))
+            .unwrap();
+        ds.set_row(1, BitArray::new([2, 0, 0, 0, 0, 0, 0, 0, 0]))
+            .unwrap();
+        ds.set_row(20, BitArray::new([0xAA, 0xAA, 0x0A, 0, 0, 0, 0, 0, 0]))
+            .unwrap();
+        ds.set_row(
+            65,
+            BitArray::new([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01]),
+        )
+        .unwrap();
+
+        assert_eq!(&ds.flash.mem[..0x100], &[0; 0x100]);
+        assert_eq!(
+            &ds.flash.mem[0x100..][..3 * 8],
+            &[1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,]
+        );
+        assert_eq!(
+            &ds.flash.mem[0x100..][20 * 8..][..8],
+            [0xAA, 0xAA, 0x0A, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            &ds.flash.mem[0x100..][66 * 8..][..16],
+            [0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01, 0, 0, 0, 0, 0, 0, 0]
+        );
+
+        assert_eq!(ds.row(0), Ok(BitArray::new([1, 0, 0, 0, 0, 0, 0, 0, 0])));
+        assert_eq!(ds.row(1), Ok(BitArray::new([2, 0, 0, 0, 0, 0, 0, 0, 0])));
+        assert_eq!(ds.row(2), Ok(BitArray::new([4, 0, 0, 0, 0, 0, 0, 0, 0])));
+        assert_eq!(
+            ds.row(20),
+            Ok(BitArray::new([0xAA, 0xAA, 0x0A, 0, 0, 0, 0, 0, 0]))
+        );
+        assert_eq!(
+            ds.row(65),
+            Ok(BitArray::new([
+                0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01
+            ]))
+        );
+    }
+
+    #[test]
+    fn parity_storage_valid() {
+        // 8-byte flash words with 9-byte block sizes
+        let mut ds =
+            FlashParityStorage::new(mem_flash::MemFlash::<1024, 128, 8>::new(0), 0x100..0x400)
+                .unwrap();
+
+        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29]).unwrap();
+        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19]).unwrap();
 
         assert_eq!(ds.get(0), Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
         assert_eq!(ds.get(1), Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
