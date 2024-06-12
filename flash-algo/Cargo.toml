@@ -27,6 +27,7 @@ defmt = ["dep:defmt"]
 [dependencies]
 crc = "3.2.1"
 defmt = { version = "0.3.8", optional = true }
+bitvec = { version = "1.0.1", default-features = false, features = ["atomic"] }
 
 [dev-dependencies]
 insta = "1.39.0"
