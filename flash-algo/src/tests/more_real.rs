@@ -6,7 +6,6 @@ extern crate std;
 use std::{prelude::rust_2021::*, println, vec};
 
 use crate::{
-    bitcache::BitCache,
     fragmentation::get_parity_matrix_row,
     manager::{
         ActiveStatus, AppBootStatus, ScratchRam, SlotManager, WriteSegmentOutcome, HEADER_SIZE,
@@ -14,6 +13,7 @@ use crate::{
     protocol::{segment_status_table::MAX_SEGMENTS, Crc32, FlashRepr, Signature},
     testutils::heap_flash::Flash,
 };
+use bitvec::array::BitArray;
 use crc::Crc;
 
 const SEGMENT_SIZE_BYTES: usize = 45;
@@ -28,9 +28,9 @@ fn generate_parity_rows(count: usize) -> Vec<Vec<u8>> {
 
     // Generate parity matrix
     for i in 0..count {
-        let mut row = BitCache::new();
+        let mut row = BitArray::ZERO;
         get_parity_matrix_row((i + 1) as u32, data_chunks.len() as u32, &mut row);
-        g.push(row.iter().collect());
+        g.push(row.iter().by_vals().collect());
     }
 
     // Calculate the parity segment *values*, e.g. the data contents
@@ -192,9 +192,9 @@ async fn miss_any_one() {
 
     let mut covered = vec![false; data_frags.len()];
     for parity_idx in 0..parity_frags.len() {
-        let mut row = BitCache::new();
+        let mut row = BitArray::ZERO;
         get_parity_matrix_row(parity_idx as u32 + 1, data_frags.len() as u32, &mut row);
-        let row: Vec<bool> = row.iter().collect();
+        let row: Vec<bool> = row.iter().by_vals().collect();
         covered
             .iter_mut()
             .zip(row.iter())
@@ -301,9 +301,9 @@ async fn could_it_recover() {
 
     let mut covered = vec![0usize; data_frags.len()];
     for parity_idx in 0..parity_frags.len() {
-        let mut row = BitCache::new();
+        let mut row = BitArray::ZERO;
         get_parity_matrix_row(parity_idx as u32 + 1, data_frags.len() as u32, &mut row);
-        let row = row.iter().collect::<Vec<bool>>();
+        let row = row.iter().by_vals().collect::<Vec<bool>>();
         covered.iter_mut().zip(row.iter()).for_each(|(c, p)| {
             if *p {
                 *c += 1

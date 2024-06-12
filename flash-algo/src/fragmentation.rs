@@ -3,7 +3,9 @@
 //! This module contains tools that are used for calculation of Forward Error Correction
 //! fragmentation according to the lorawan spec.
 
-use crate::bitcache::BitCache;
+use bitvec::array::BitArray;
+
+use crate::protocol::segment_status_table::MAX_SEGMENTS;
 use core::{assert, cfg};
 
 // This function is a pseudo-random number generator, that is
@@ -55,15 +57,15 @@ pub(crate) fn fragmentation_prbs23(x: u32) -> u32 {
 ///
 /// ```rust
 /// use flash_algo::fragmentation::get_parity_matrix_row;
-/// use flash_algo::bitcache::BitCache;
+/// use bitvec::array::BitArray;
 ///
 /// const M: u32 = 16;
 ///
-/// let mut bitbuf = BitCache::new();
+/// let mut bitbuf = BitArray::ZERO;
 ///
 /// get_parity_matrix_row(3, M, &mut bitbuf);
 ///
-/// let app_vec = bitbuf.iter().take(M as usize).collect::<Vec<bool>>();
+/// let app_vec = bitbuf.iter().by_vals().take(M as usize).collect::<Vec<bool>>();
 ///
 /// // The third parity frame is the resulting XOR of 1-indexed data segments:
 /// // `D1 ^ D2 ^ D3 ^ D9 ^ D11 ^ D13 ^ D14`.
@@ -86,11 +88,11 @@ pub(crate) fn fragmentation_prbs23(x: u32) -> u32 {
 /// # Panics
 /// Will panic if `cap_n` == 0.
 /// Will panic if `buf.len()` != `cap_m`
-pub fn get_parity_matrix_row(cap_n: u32, cap_m: u32, buf: &mut BitCache) {
+pub fn get_parity_matrix_row(cap_n: u32, cap_m: u32, buf: &mut BitArray<[u8; MAX_SEGMENTS / 8]>) {
     assert!(cap_n != 0);
-    assert!(buf.capacity() >= cap_m as usize);
+    assert!(buf.len() >= cap_m as usize);
 
-    buf.set_all(false);
+    buf.fill(false);
 
     let m = u32::from(cap_m.is_power_of_two());
     let mut x = 1 + (1001_u32.wrapping_mul(cap_n));
@@ -120,7 +122,7 @@ pub fn get_parity_matrix_row(cap_n: u32, cap_m: u32, buf: &mut BitCache) {
         #[allow(clippy::unwrap_used)]
         #[allow(clippy::indexing_slicing)] // TODO: eliminate possible panic
         if allow_redundancy || !buf.get(r as usize).unwrap() {
-            buf.set(r as usize, true).unwrap();
+            buf.set(r as usize, true);
             nb_coeff += 1;
         }
     }

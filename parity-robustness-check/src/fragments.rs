@@ -1,6 +1,6 @@
+use bitvec::array::BitArray;
 use crc::{Crc, CRC_32_CKSUM};
 use flash_algo::{
-    bitcache::BitCache,
     fragmentation::get_parity_matrix_row,
     protocol::{Crc32, FlashRepr, Signature},
 };
@@ -41,10 +41,11 @@ impl Fragments {
         let mut parity_fragments = vec![];
 
         for i in 0..num_parity_fragments {
-            let mut bitbuf = BitCache::new();
+            let mut bitbuf = BitArray::ZERO;
             get_parity_matrix_row((i + 1) as u32, num_data_fragments as u32, &mut bitbuf);
             let parity_row = bitbuf
                 .iter()
+                .by_vals()
                 .take(num_data_fragments)
                 .collect::<Vec<bool>>();
 
