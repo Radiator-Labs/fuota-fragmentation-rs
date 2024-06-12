@@ -2,6 +2,8 @@
 //!
 //! A bit-packed array of bits, useful for capturing LDPC matrix rows
 
+use bitvec::array::BitArray;
+
 use crate::protocol::segment_status_table::{DATA_NOT_WRITTEN, DATA_WRITTEN, MAX_SEGMENTS};
 
 const BC_SIZE: usize = MAX_SEGMENTS / 8;
@@ -14,13 +16,13 @@ pub struct OutOfRange {
 /// Bitcache
 ///
 /// A bit-packed array of bits, useful for capturing LDPC matrix rows
-pub struct BitCache {
-    buf: [u8; BC_SIZE],
+pub(crate) struct BitCache {
+    buf: BitArray<[u8; BC_SIZE]>,
 }
 
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
-pub enum FillError {
+pub(crate) enum FillError {
     OutOfRange,
     InvalidByte,
 }
@@ -41,20 +43,9 @@ impl BitCache {
     /// Create a new [`BitCache`], with all bits set to "false"
     #[must_use]
     pub const fn new() -> Self {
-        Self { buf: [0; BC_SIZE] }
-    }
-
-    /// Obtain the capacity of the [`BitCache`], in number of *boolean bits*,
-    /// not number of *bytes*.
-    #[must_use]
-    pub const fn capacity(&self) -> usize {
-        MAX_SEGMENTS
-    }
-
-    /// Set all boolean bits to a given value
-    pub fn set_all(&mut self, val: bool) {
-        let val_byte = if val { 0xFF } else { 0x00 };
-        self.buf.iter_mut().for_each(|b| *b = val_byte);
+        Self {
+            buf: BitArray::ZERO,
+        }
     }
 
     /// Fill the bitcache from an on-flash memory region.
@@ -88,10 +79,7 @@ impl BitCache {
     /// Returns None if the idx is larger than capacity
     #[must_use]
     pub fn get(&self, idx: usize) -> Option<bool> {
-        let byte_idx = idx >> 3_usize;
-        let bit_idx = idx & 0b111;
-        let byte = self.buf.get(byte_idx)?;
-        Some(byte & (1 << bit_idx) != 0)
+        self.buf.get(idx).map(|v| *v)
     }
 
     /// Set the idx-th bit of the cache
@@ -100,19 +88,7 @@ impl BitCache {
     ///
     /// Returns an error if idx is larger than capacity
     pub fn set(&mut self, idx: usize, val: bool) -> Result<(), OutOfRange> {
-        let byte_idx = idx >> 3_usize;
-        let bit_idx = idx & 0b111;
-        let byte = self
-            .buf
-            .get_mut(byte_idx)
-            .ok_or(OutOfRange { _clippy: () })?;
-        let mask = 1 << bit_idx;
-
-        if val {
-            *byte |= mask;
-        } else {
-            *byte &= !mask;
-        };
+        *self.buf.get_mut(idx).ok_or(OutOfRange { _clippy: () })? = val;
         Ok(())
     }
 
@@ -127,7 +103,7 @@ impl BitCache {
 }
 
 #[derive(Clone)]
-pub struct BitIter<'a> {
+pub(crate) struct BitIter<'a> {
     bc: &'a BitCache,
     idx: usize,
 }

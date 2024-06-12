@@ -22,6 +22,7 @@ force-full-r = ["flash-algo/force-full-r"]
 
 [dependencies]
 flash-algo = { path = "../flash-algo", features = ["testutils"] }
+bitvec = {version = "1.0.1", default-features = false, features = ["atomic"]}
 
 async-std = { version = "1.2", features = ["attributes"] }
 clap = { version = "4.5.4", features = ["derive", "std"] }
