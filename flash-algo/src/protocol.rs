@@ -691,6 +691,14 @@ pub mod test {
 
         val.write_to_bytes(&mut scratch).unwrap();
 
+        assert_eq!(
+            scratch,
+            [
+                0, 0, 0, 0, 120, 86, 52, 18, 0, 1, 0, 0, 0, 64, 0, 0, 68, 68, 68, 68, 17, 17, 17,
+                17, 144, 120, 239, 205
+            ]
+        );
+
         for &(offset, size, contents) in expected_contents {
             println!("offset: {offset}, size: {size}, contents: {contents:?}");
             let relevant = &scratch[offset..][..size];

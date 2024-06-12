@@ -1460,6 +1460,15 @@ mod test {
     use insta::assert_snapshot;
 
     #[test]
+    fn check_layout_constants() {
+        // This test should not be modified or fail, it ensures
+        // our memory layout remains compatible with existing bootloaders
+
+        assert_eq!(DATA_PAYLOAD_OFFSET, 0x4444);
+        assert_eq!(MAX_SEGMENT_SIZE, 0x100);
+    }
+
+    #[test]
     #[allow(clippy::assertions_on_constants)]
     fn size_checker() {
         // Scratch RAM last updated: 2024-01-02
