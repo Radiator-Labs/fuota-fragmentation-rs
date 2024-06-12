@@ -175,7 +175,7 @@ impl<const N: usize> SlotManager<N> {
     /// CRC32. This is used to ensure that [`NumberOfSegments`] x [`SegmentSize`]
     /// is a reasonable number.
     #[must_use]
-    pub fn max_data_size(&self) -> usize {
+    fn max_data_size(&self) -> usize {
         // Subtract off the size required for fixed headers
         let mut max = self.slot_size;
         max = max.saturating_sub(HEADER_SIZE);
@@ -189,7 +189,7 @@ impl<const N: usize> SlotManager<N> {
     /// ## Errors
     ///
     /// Returns an error if the size is not reasonable
-    pub fn is_reasonably_sized<T: SpiFlash>(
+    fn is_reasonably_sized<T: SpiFlash>(
         &self,
         segment_size: u32,
         firmware_segments: u32,
@@ -287,7 +287,7 @@ impl<const N: usize> SlotManager<N> {
     ///
     /// # Panics
     /// Panics if `self.slot_size` is not a multiple of `flash.block_size()`
-    pub async fn erase_slot<T: SpiFlash>(
+    async fn erase_slot<T: SpiFlash>(
         &mut self,
         flash: &mut T,
         slot_idx: usize,
@@ -640,7 +640,7 @@ impl<const N: usize> SlotManager<N> {
     ///
     /// # Errors
     /// Reports if SPI Flash activities fail
-    pub async fn find_oldest_slot<T: SpiFlash>(
+    async fn find_oldest_slot<T: SpiFlash>(
         &mut self,
         flash: &mut T,
         scratch: &mut ScratchRam,
@@ -1060,13 +1060,12 @@ impl ActiveStatus {
     ///
     /// # Errors
     /// Reports if `check_crc` operation fails
-    pub async fn check_fw_idx_crc<T: SpiFlash>(
+    async fn check_fw_idx_crc<T: SpiFlash>(
         &mut self,
         flash: &mut T,
         scratch: &mut ScratchRam,
-        idx: usize,
     ) -> Result<(), ManagerError<T::Error>> {
-        let slot_start = idx * self.slot_size;
+        let slot_start = self.firmware_slot_idx * self.slot_size;
 
         check_crc_from_index(
             flash,
@@ -1097,8 +1096,7 @@ impl ActiveStatus {
             return Err(ManagerError::CheckFailNotDone);
         }
 
-        self.check_fw_idx_crc(flash, scratch, self.firmware_slot_idx)
-            .await?;
+        self.check_fw_idx_crc(flash, scratch).await?;
 
         let fw_slot_start = self.firmware_slot_idx * self.slot_size;
         let pa_slot_start = self.parity_slot_idx * self.slot_size;
@@ -1302,7 +1300,7 @@ pub struct Validated {
 ///
 /// # Errors
 /// Reports if SPI Flash activities fail
-pub async fn read_header_from_slot<T: SpiFlash>(
+async fn read_header_from_slot<T: SpiFlash>(
     flash: &mut T,
     scratch: &mut ScratchRam,
     slot_start: usize,
@@ -1430,9 +1428,9 @@ pub(crate) fn next_seq(cur: u32) -> u32 {
 /// A structure that contains the oldest slot index, and the next sequence number
 #[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
-pub struct OldestReport {
-    pub slot_idx: usize,
-    pub next_seq_no: u32,
+struct OldestReport {
+    slot_idx: usize,
+    next_seq_no: u32,
 }
 
 #[allow(
