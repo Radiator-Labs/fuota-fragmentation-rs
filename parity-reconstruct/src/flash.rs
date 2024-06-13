@@ -9,9 +9,10 @@ use crate::{DataStorage, MatrixStorage, ParityStorage};
 
 const MAX_WORD_SIZE: usize = 32;
 
-/// A shared flash impl that is made for use within a single thread.
+/// A simple shared flash impl that is made for use within a single thread (and no parallel async usage).
+/// It's completely optional to use and only here for convenience.
 ///
-/// It implements the [embedded_storage] traits and uses a refcell internally.
+/// It implements the [embedded_storage_async] traits and uses a refcell internally.
 #[derive(Debug)]
 pub struct SharedFlash<'a, F> {
     flash: RefCell<&'a mut F>,
@@ -24,19 +25,20 @@ impl<'a, F> SharedFlash<'a, F> {
     }
 }
 
-impl<'a, F: embedded_storage::nor_flash::ErrorType> embedded_storage::nor_flash::ErrorType
-    for &SharedFlash<'a, F>
+impl<'a, F: embedded_storage_async::nor_flash::ErrorType>
+    embedded_storage_async::nor_flash::ErrorType for &SharedFlash<'a, F>
 {
     type Error = F::Error;
 }
 
-impl<'a, F: embedded_storage::nor_flash::ReadNorFlash> embedded_storage::nor_flash::ReadNorFlash
-    for &SharedFlash<'a, F>
+impl<'a, F: embedded_storage_async::nor_flash::ReadNorFlash>
+    embedded_storage_async::nor_flash::ReadNorFlash for &SharedFlash<'a, F>
 {
     const READ_SIZE: usize = F::READ_SIZE;
 
-    fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-        self.flash.borrow_mut().read(offset, bytes)
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+        self.flash.borrow_mut().read(offset, bytes).await
     }
 
     fn capacity(&self) -> usize {
@@ -44,24 +46,26 @@ impl<'a, F: embedded_storage::nor_flash::ReadNorFlash> embedded_storage::nor_fla
     }
 }
 
-impl<'a, F: embedded_storage::nor_flash::NorFlash> embedded_storage::nor_flash::NorFlash
+impl<'a, F: embedded_storage_async::nor_flash::NorFlash> embedded_storage_async::nor_flash::NorFlash
     for &SharedFlash<'a, F>
 {
     const WRITE_SIZE: usize = F::WRITE_SIZE;
 
     const ERASE_SIZE: usize = F::ERASE_SIZE;
 
-    fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        self.flash.borrow_mut().erase(from, to)
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+        self.flash.borrow_mut().erase(from, to).await
     }
 
-    fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        self.flash.borrow_mut().write(offset, bytes)
+    #[allow(clippy::await_holding_refcell_ref)]
+    async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.flash.borrow_mut().write(offset, bytes).await
     }
 }
 
-impl<'a, F: embedded_storage::nor_flash::MultiwriteNorFlash>
-    embedded_storage::nor_flash::MultiwriteNorFlash for &SharedFlash<'a, F>
+impl<'a, F: embedded_storage_async::nor_flash::MultiwriteNorFlash>
+    embedded_storage_async::nor_flash::MultiwriteNorFlash for &SharedFlash<'a, F>
 {
 }
 
@@ -69,7 +73,7 @@ impl<'a, F: embedded_storage::nor_flash::MultiwriteNorFlash>
 /// It stores the matrix data in flash relatively efficiently.
 pub struct FlashMatrixStorage<F>
 where
-    F: embedded_storage::nor_flash::NorFlash,
+    F: embedded_storage_async::nor_flash::NorFlash,
 {
     flash: F,
     flash_range: Range<u32>,
@@ -77,14 +81,14 @@ where
 
 impl<F> FlashMatrixStorage<F>
 where
-    F: embedded_storage::nor_flash::NorFlash,
+    F: embedded_storage_async::nor_flash::NorFlash,
 {
     /// Create a new instance
-    pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
+    pub async fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
 
-        flash.erase(flash_range.start, flash_range.end)?;
+        flash.erase(flash_range.start, flash_range.end).await?;
 
         Ok(Self { flash, flash_range })
     }
@@ -107,11 +111,11 @@ where
 
 impl<F, const N: usize> MatrixStorage<[u8; N]> for FlashMatrixStorage<F>
 where
-    F: embedded_storage::nor_flash::NorFlash,
+    F: embedded_storage_async::nor_flash::NorFlash,
 {
     type Error = F::Error;
 
-    fn set_row(&mut self, m: usize, data: BitArray<[u8; N]>) -> Result<(), Self::Error> {
+    async fn set_row(&mut self, m: usize, data: BitArray<[u8; N]>) -> Result<(), Self::Error> {
         let address = self.flash_range.start + Self::flash_row_address_offset(m);
         let data_len = Self::flash_row_size(m);
 
@@ -121,19 +125,20 @@ where
             (&data.as_raw_slice()[..data_len], &[][..])
         };
 
-        self.flash.write(address, data_body)?;
+        self.flash.write(address, data_body).await?;
 
         if !data_padded.is_empty() {
             let mut buffer = [0; MAX_WORD_SIZE];
             buffer[..data_padded.len()].copy_from_slice(data_padded);
             self.flash
-                .write(address + data_body.len() as u32, &buffer[..F::WRITE_SIZE])?;
+                .write(address + data_body.len() as u32, &buffer[..F::WRITE_SIZE])
+                .await?;
         }
 
         Ok(())
     }
 
-    fn row(&mut self, m: usize) -> Result<BitArray<[u8; N]>, Self::Error> {
+    async fn row(&mut self, m: usize) -> Result<BitArray<[u8; N]>, Self::Error> {
         let address = self.flash_range.start + Self::flash_row_address_offset(m);
         let data_len = Self::flash_row_size(m);
 
@@ -146,14 +151,16 @@ where
             (&mut data.as_raw_mut_slice()[..data_len], &mut [][..])
         };
 
-        self.flash.read(address, data_body)?;
+        self.flash.read(address, data_body).await?;
 
         if !data_padded.is_empty() {
             let mut buffer = [0; MAX_WORD_SIZE];
-            self.flash.read(
-                address + data_body.len() as u32,
-                &mut buffer[..F::WRITE_SIZE],
-            )?;
+            self.flash
+                .read(
+                    address + data_body.len() as u32,
+                    &mut buffer[..F::WRITE_SIZE],
+                )
+                .await?;
             data_padded.copy_from_slice(&buffer[..data_padded.len()]);
         }
 
@@ -165,7 +172,7 @@ where
 /// It stores the parity data in flash.
 pub struct FlashParityStorage<F>
 where
-    F: embedded_storage::nor_flash::NorFlash,
+    F: embedded_storage_async::nor_flash::NorFlash,
 {
     flash: F,
     flash_range: Range<u32>,
@@ -173,14 +180,14 @@ where
 
 impl<F> FlashParityStorage<F>
 where
-    F: embedded_storage::nor_flash::NorFlash,
+    F: embedded_storage_async::nor_flash::NorFlash,
 {
     /// Create a new instance
-    pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
+    pub async fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
 
-        flash.erase(flash_range.start, flash_range.end)?;
+        flash.erase(flash_range.start, flash_range.end).await?;
 
         Ok(Self { flash, flash_range })
     }
@@ -190,11 +197,11 @@ where
 /// Between every parity block there is a little bit of potential padding.
 impl<F, const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for FlashParityStorage<F>
 where
-    F: embedded_storage::nor_flash::NorFlash,
+    F: embedded_storage_async::nor_flash::NorFlash,
 {
     type Error = F::Error;
 
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         let rounded_up_len = data.len().next_multiple_of(F::WRITE_SIZE);
         let rounded_down_len = previous_multiple_of(data.len(), F::WRITE_SIZE);
         let offset = m * rounded_up_len;
@@ -203,22 +210,25 @@ where
         let (data0, data1) = data.split_at(rounded_down_len);
 
         self.flash
-            .write(self.flash_range.start + offset as u32, data0)?;
+            .write(self.flash_range.start + offset as u32, data0)
+            .await?;
 
         if !data1.is_empty() {
             let mut buffer = [0; MAX_WORD_SIZE];
 
             buffer[..data1.len()].copy_from_slice(data1);
-            self.flash.write(
-                self.flash_range.start + offset as u32 + data0.len() as u32,
-                &buffer[..F::WRITE_SIZE],
-            )?;
+            self.flash
+                .write(
+                    self.flash_range.start + offset as u32 + data0.len() as u32,
+                    &buffer[..F::WRITE_SIZE],
+                )
+                .await?;
         }
 
         Ok(())
     }
 
-    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         let mut data = [0; BLOCKSIZE];
 
         let rounded_up_len = data.len().next_multiple_of(F::WRITE_SIZE);
@@ -229,15 +239,18 @@ where
         let (data0, data1) = data.split_at_mut(rounded_down_len);
 
         self.flash
-            .read(self.flash_range.start + offset as u32, data0)?;
+            .read(self.flash_range.start + offset as u32, data0)
+            .await?;
 
         if !data1.is_empty() {
             let mut buffer = [0; MAX_WORD_SIZE];
 
-            self.flash.read(
-                self.flash_range.start + offset as u32 + data0.len() as u32,
-                &mut buffer[..F::READ_SIZE],
-            )?;
+            self.flash
+                .read(
+                    self.flash_range.start + offset as u32 + data0.len() as u32,
+                    &mut buffer[..F::READ_SIZE],
+                )
+                .await?;
 
             data1.copy_from_slice(&buffer[..data1.len()]);
         }
@@ -251,7 +264,7 @@ where
 /// This helps bootloaders so they can just copy the data over without further processing.
 pub struct FlashDataStorage<F>
 where
-    F: embedded_storage::nor_flash::MultiwriteNorFlash,
+    F: embedded_storage_async::nor_flash::MultiwriteNorFlash,
 {
     flash: F,
     flash_range: Range<u32>,
@@ -259,14 +272,14 @@ where
 
 impl<F> FlashDataStorage<F>
 where
-    F: embedded_storage::nor_flash::MultiwriteNorFlash,
+    F: embedded_storage_async::nor_flash::MultiwriteNorFlash,
 {
     /// Create a new instance
-    pub fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
+    pub async fn new(mut flash: F, flash_range: Range<u32>) -> Result<Self, F::Error> {
         assert!(F::WRITE_SIZE <= MAX_WORD_SIZE);
         assert!((F::WRITE_SIZE / F::READ_SIZE).is_power_of_two());
 
-        flash.erase(flash_range.start, flash_range.end)?;
+        flash.erase(flash_range.start, flash_range.end).await?;
 
         Ok(Self { flash, flash_range })
     }
@@ -322,11 +335,11 @@ where
 /// Algorithm that doesn't have any padding between blocks
 impl<F, const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for FlashDataStorage<F>
 where
-    F: embedded_storage::nor_flash::MultiwriteNorFlash,
+    F: embedded_storage_async::nor_flash::MultiwriteNorFlash,
 {
     type Error = F::Error;
 
-    fn store(&mut self, m: usize, mut data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, mut data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         assert!(BLOCKSIZE >= F::WRITE_SIZE);
 
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
@@ -337,22 +350,23 @@ where
             buffer[MAX_WORD_SIZE - pad_start.len()..].copy_from_slice(pad_start);
 
             self.flash
-                .write(start_addr, &buffer[MAX_WORD_SIZE - F::WRITE_SIZE..])?;
+                .write(start_addr, &buffer[MAX_WORD_SIZE - F::WRITE_SIZE..])
+                .await?;
         }
 
-        self.flash.write(body_addr, body)?;
+        self.flash.write(body_addr, body).await?;
 
         if !pad_end.is_empty() {
             let mut buffer = [0xFF; MAX_WORD_SIZE];
             buffer[..pad_end.len()].copy_from_slice(pad_end);
 
-            self.flash.write(end_addr, &buffer[..F::WRITE_SIZE])?;
+            self.flash.write(end_addr, &buffer[..F::WRITE_SIZE]).await?;
         }
 
         Ok(())
     }
 
-    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         let mut data = [0; BLOCKSIZE];
 
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
@@ -361,16 +375,19 @@ where
         if !pad_start.is_empty() {
             let mut buffer = [0x00; MAX_WORD_SIZE];
             self.flash
-                .read(start_addr, &mut buffer[MAX_WORD_SIZE - F::WRITE_SIZE..])?;
+                .read(start_addr, &mut buffer[MAX_WORD_SIZE - F::WRITE_SIZE..])
+                .await?;
 
             pad_start.copy_from_slice(&buffer[MAX_WORD_SIZE - pad_start.len()..]);
         }
 
-        self.flash.read(body_addr, body)?;
+        self.flash.read(body_addr, body).await?;
 
         if !pad_end.is_empty() {
             let mut buffer = [0x00; MAX_WORD_SIZE];
-            self.flash.read(end_addr, &mut buffer[..F::WRITE_SIZE])?;
+            self.flash
+                .read(end_addr, &mut buffer[..F::WRITE_SIZE])
+                .await?;
 
             pad_end.copy_from_slice(&buffer[..pad_end.len()]);
         }
@@ -397,32 +414,58 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn simple_reconstruction_test() {
+    #[futures_test::test]
+    async fn simple_reconstruction_test() {
         let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
             4,
             TestParity::<4>,
-            FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400).unwrap(),
-            FlashParityStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400).unwrap(),
-            FlashDataStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400).unwrap(),
+            FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400)
+                .await
+                .unwrap(),
+            FlashParityStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400)
+                .await
+                .unwrap(),
+            FlashDataStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400)
+                .await
+                .unwrap(),
         );
-        assert_eq!(rec.handle_block(0, [1]).unwrap(), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(2, [3]).unwrap(), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(9, [2]).unwrap(), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(10, [1]).unwrap(), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(14, [6]).unwrap(), BlockResult::Done(4));
+        assert_eq!(
+            rec.handle_block(0, [1]).await.unwrap(),
+            BlockResult::NeedMore
+        );
+        assert_eq!(
+            rec.handle_block(2, [3]).await.unwrap(),
+            BlockResult::NeedMore
+        );
+        assert_eq!(
+            rec.handle_block(9, [2]).await.unwrap(),
+            BlockResult::NeedMore
+        );
+        assert_eq!(
+            rec.handle_block(10, [1]).await.unwrap(),
+            BlockResult::NeedMore
+        );
+        assert_eq!(
+            rec.handle_block(14, [6]).await.unwrap(),
+            BlockResult::Done(4)
+        );
     }
 
-    #[test]
-    fn data_storage_valid() {
+    #[futures_test::test]
+    async fn data_storage_valid() {
         // 8-byte flash words with 9-byte block sizes
         let mut ds =
             FlashDataStorage::new(mem_flash::MemFlash::<1024, 128, 8>::new(0), 0x100..0x400)
+                .await
                 .unwrap();
 
-        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
-        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29]).unwrap();
-        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19]).unwrap();
+        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).await.unwrap();
+        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29])
+            .await
+            .unwrap();
+        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19])
+            .await
+            .unwrap();
 
         assert_eq!(&ds.flash.mem[..0x100], &[0; 0x100]);
         assert_eq!(
@@ -434,30 +477,36 @@ mod tests {
         );
         assert_eq!(&ds.flash.mem[0x100..][9 * 3..], &[0xFF; 0x300 - 9 * 3]);
 
-        assert_eq!(ds.get(0), Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
-        assert_eq!(ds.get(1), Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
-        assert_eq!(ds.get(2), Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
+        assert_eq!(ds.get(0).await, Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(ds.get(1).await, Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
+        assert_eq!(ds.get(2).await, Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
     }
 
-    #[test]
-    fn matrix_storage_valid() {
+    #[futures_test::test]
+    async fn matrix_storage_valid() {
         // 8-byte flash words with 9-byte block sizes
         let mut ds =
             FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 8>::new(0), 0x100..0x400)
+                .await
                 .unwrap();
 
         ds.set_row(0, BitArray::new([1, 0, 0, 0, 0, 0, 0, 0, 0]))
+            .await
             .unwrap();
         ds.set_row(2, BitArray::new([4, 0, 0, 0, 0, 0, 0, 0, 0]))
+            .await
             .unwrap();
         ds.set_row(1, BitArray::new([2, 0, 0, 0, 0, 0, 0, 0, 0]))
+            .await
             .unwrap();
         ds.set_row(20, BitArray::new([0xAA, 0xAA, 0x0A, 0, 0, 0, 0, 0, 0]))
+            .await
             .unwrap();
         ds.set_row(
             65,
             BitArray::new([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01]),
         )
+        .await
         .unwrap();
 
         assert_eq!(&ds.flash.mem[..0x100], &[0; 0x100]);
@@ -474,40 +523,54 @@ mod tests {
             [0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01, 0, 0, 0, 0, 0, 0, 0]
         );
 
-        assert_eq!(ds.row(0), Ok(BitArray::new([1, 0, 0, 0, 0, 0, 0, 0, 0])));
-        assert_eq!(ds.row(1), Ok(BitArray::new([2, 0, 0, 0, 0, 0, 0, 0, 0])));
-        assert_eq!(ds.row(2), Ok(BitArray::new([4, 0, 0, 0, 0, 0, 0, 0, 0])));
         assert_eq!(
-            ds.row(20),
+            ds.row(0).await,
+            Ok(BitArray::new([1, 0, 0, 0, 0, 0, 0, 0, 0]))
+        );
+        assert_eq!(
+            ds.row(1).await,
+            Ok(BitArray::new([2, 0, 0, 0, 0, 0, 0, 0, 0]))
+        );
+        assert_eq!(
+            ds.row(2).await,
+            Ok(BitArray::new([4, 0, 0, 0, 0, 0, 0, 0, 0]))
+        );
+        assert_eq!(
+            ds.row(20).await,
             Ok(BitArray::new([0xAA, 0xAA, 0x0A, 0, 0, 0, 0, 0, 0]))
         );
         assert_eq!(
-            ds.row(65),
+            ds.row(65).await,
             Ok(BitArray::new([
                 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01
             ]))
         );
     }
 
-    #[test]
-    fn parity_storage_valid() {
+    #[futures_test::test]
+    async fn parity_storage_valid() {
         // 8-byte flash words with 9-byte block sizes
         let mut ds =
             FlashParityStorage::new(mem_flash::MemFlash::<1024, 128, 8>::new(0), 0x100..0x400)
+                .await
                 .unwrap();
 
-        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
-        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29]).unwrap();
-        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19]).unwrap();
+        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).await.unwrap();
+        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29])
+            .await
+            .unwrap();
+        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19])
+            .await
+            .unwrap();
 
-        assert_eq!(ds.get(0), Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
-        assert_eq!(ds.get(1), Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
-        assert_eq!(ds.get(2), Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
+        assert_eq!(ds.get(0).await, Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
+        assert_eq!(ds.get(1).await, Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
+        assert_eq!(ds.get(2).await, Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
     }
 
     // Taken and adapted from: https://github.com/lulf/embedded-storage-inmemory
     mod mem_flash {
-        use embedded_storage::nor_flash::{
+        use embedded_storage_async::nor_flash::{
             ErrorType, MultiwriteNorFlash, NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash,
         };
 
@@ -608,7 +671,7 @@ mod tests {
         {
             const READ_SIZE: usize = 1;
 
-            fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+            async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
                 self.read(offset, bytes)
             }
 
@@ -623,11 +686,11 @@ mod tests {
             const WRITE_SIZE: usize = WRITE_SIZE;
             const ERASE_SIZE: usize = ERASE_SIZE;
 
-            fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+            async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
                 self.write(offset, bytes)
             }
 
-            fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+            async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
                 self.erase(from, to)
             }
         }
