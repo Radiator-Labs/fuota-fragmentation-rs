@@ -1,4 +1,4 @@
 [workspace]
-members = ["flash-algo", "parity-robustness-check", "parity-reconstruct"]
+members = ["flash-algo", "parity-robustness-check", "parity-reconstruct", "flash-algo-new"]
 exclude = []
 resolver = "2"
