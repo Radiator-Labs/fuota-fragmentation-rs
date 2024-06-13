@@ -24,7 +24,7 @@ impl<V: BitViewSized> TestMatrixStorage<V> {
 impl<V: BitViewSized> MatrixStorage<V> for TestMatrixStorage<V> {
     type Error = core::convert::Infallible;
 
-    fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error> {
+    async fn set_row(&mut self, m: usize, data: BitArray<V>) -> Result<(), Self::Error> {
         assert!(data[m]);
         for (i, el) in data.iter().enumerate() {
             assert!(i <= m || !el)
@@ -33,7 +33,7 @@ impl<V: BitViewSized> MatrixStorage<V> for TestMatrixStorage<V> {
         Ok(())
     }
 
-    fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error> {
+    async fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error> {
         Ok(self.data[m].clone())
     }
 }
@@ -57,7 +57,7 @@ struct WrappedBlockStorage<const BLOCKSIZE: usize>(Rc<RefCell<BlockStorage<BLOCK
 impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for WrappedBlockStorage<BLOCKSIZE> {
     type Error = core::convert::Infallible;
 
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         let mut this = self.0.borrow_mut();
         assert!(!this.used[m]);
         this.data[m] = data;
@@ -65,7 +65,7 @@ impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for WrappedBlockStorage<BLOC
         Ok(())
     }
 
-    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         let this = self.0.borrow();
         assert!(this.used[m]);
         Ok(this.data[m])
@@ -75,14 +75,14 @@ impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for WrappedBlockStorage<BLOC
 impl<const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
     type Error = core::convert::Infallible;
 
-    fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
         assert!(!self.used[m]);
         self.data[m] = data;
         self.used[m] = true;
         Ok(())
     }
 
-    fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
         assert!(self.used[m]);
         Ok(self.data[m])
     }
@@ -137,7 +137,7 @@ fuzz_target!(|testcase: (Vec<[u8; 4]>, &[u8])| {
                 }
             }
 
-            match reconstructor.handle_block(i, block).unwrap() {
+            match futures::executor::block_on(reconstructor.handle_block(i, block)).unwrap() {
                 BlockResult::NeedMore => {}
                 BlockResult::TooManyMissing => panic!("Should always fit"),
                 BlockResult::Done(_) => {
