@@ -491,6 +491,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flash-algo-new"
+version = "0.2.0"
+dependencies = [
+ "bitvec",
+ "crc",
+ "defmt",
+ "insta",
+ "tokio",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
