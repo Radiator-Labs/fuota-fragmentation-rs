@@ -7,11 +7,15 @@ edition = "2021"
 
 [dependencies]
 bitvec = { version = "1.0.1", default-features = false, features = ["atomic"] }
-embedded-storage = { version = "0.3.1", optional = true }
+embedded-storage-async = { version = "0.4.1", optional = true }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+futures = { version = "0.3.30", features = ["executor"] }
+futures-test = "0.3.30"
 
 [features]
 # Enable the flash adapters
-flash = ["dep:embedded-storage"]
+flash = ["dep:embedded-storage-async"]
 default = ["flash"]
 serde = ["dep:serde"]
