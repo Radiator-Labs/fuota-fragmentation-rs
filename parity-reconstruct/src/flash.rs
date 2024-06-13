@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(rec.handle_block(2, [3]).unwrap(), BlockResult::NeedMore);
         assert_eq!(rec.handle_block(9, [2]).unwrap(), BlockResult::NeedMore);
         assert_eq!(rec.handle_block(10, [1]).unwrap(), BlockResult::NeedMore);
-        assert_eq!(rec.handle_block(14, [6]).unwrap(), BlockResult::Done);
+        assert_eq!(rec.handle_block(14, [6]).unwrap(), BlockResult::Done(4));
     }
 
     #[test]
