@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 bitvec = {version = "1.0.1", default-features = false, features = ["atomic"]}
+futures = { version = "0.3.30", features = ["executor"] }
 
 [dependencies.parity-reconstruct]
 path = ".."
