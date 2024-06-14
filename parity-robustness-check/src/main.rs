@@ -31,9 +31,13 @@ struct Args {
     #[arg(short, long, default_value_t = 0.45)]
     parity: f64,
 
-    /// Percent of fragments to not skip
+    /// Percent of fragments skip randomly throughout the transmission
     #[arg(short, long, default_value_t = 0.02)]
-    skip_rate: f64,
+    rate_skip: f64,
+
+    /// Percent of fragments skip in one burst during the transmission
+    #[arg(short, long, default_value_t = 0.0)]
+    burst_rate_skip: f64,
     // /// Seed for psuedo-random numbers used randomizing the parity check
     // #[arg(short, long)]
     // seed: [u8; 32],
@@ -45,8 +49,10 @@ async fn main() -> std::io::Result<()> {
     assert!(args.count > 0);
     assert!(args.size > 0);
     assert!(args.parity >= 0.0);
-    assert!(args.skip_rate >= 0.0);
-    assert!(args.skip_rate <= 1.0);
+    assert!(args.rate_skip >= 0.0);
+    assert!(args.rate_skip <= 1.0);
+    assert!(args.burst_rate_skip >= 0.0);
+    assert!(args.burst_rate_skip <= 1.0);
 
     let mut seed: <SmallRng as SeedableRng>::Seed = Default::default();
     thread_rng().fill(&mut seed);
@@ -57,12 +63,13 @@ async fn main() -> std::io::Result<()> {
         args.count,
         args.size,
         args.parity,
-        args.skip_rate,
+        args.rate_skip,
+        args.burst_rate_skip,
         &seed,
         &fragments,
     );
     for _ in 0..args.count {
-        let omissions = Omissions::new(args.skip_rate, &mut rng, &fragments);
+        let omissions = Omissions::new(args.rate_skip, args.burst_rate_skip, &mut rng, &fragments);
         results.add_cycle(perform_test_cycle(&fragments, &omissions).await);
     }
 

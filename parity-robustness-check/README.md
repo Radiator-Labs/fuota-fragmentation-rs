@@ -11,8 +11,12 @@ Options:
   -d, --detailed               Output the detailed JSON output
   -c, --count <COUNT>          Number of test cycles to execute [default: 1]
   -s, --size <SIZE>            Size of the fragments [default: 40]
-  -p, --parity <PARITY>        Amount of parity fragments as a fraction of the number of data fragments [default: 0.45]
-  -s, --skip-rate <SKIP_RATE>  Percent of fragments to not skip [default: 0.02]
+  -p, --parity <PARITY>
+    Amount of parity fragments as a fraction of the number of data fragments [default: 0.45]
+  -r, --rate-skip <RATE_SKIP> 
+    Percent of fragments skip randomly throughout the transmission [default: 0.02]
+  -b, --burst-rate-skip <BURST_RATE_SKIP>
+    Percent of fragments skip in one burst during the transmission [default: 0.0]
   -h, --help                   Print help
   -V, --version                Print version
 ```
@@ -23,7 +27,6 @@ Options:
 
 * Perform an equality check
   * Currently trusts the CRC check
-* Support "bursty" packet loss
 * Support inputting random number seeds to support issue replication
 * Add better CI scripting
 * Eliminate the CRC and Signature from the data
