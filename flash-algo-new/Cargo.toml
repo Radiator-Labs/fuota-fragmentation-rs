@@ -17,8 +17,10 @@ maintenance = { status = "actively-developed" }
 # Enable a more robust forward error correction coverage approach.
 #
 # This MAY be incompatible with some other FEC implementations found in the wild.
+default = ["matrixreconstructor"]
 force-full-r = []
 testutils = []
+matrixreconstructor = ["dep:parity-reconstruct"]
 
 # Enable standard library features. Typically used for testing/simulation.
 use-std = []
@@ -28,6 +30,7 @@ defmt = ["dep:defmt"]
 crc = "3.2.1"
 defmt = { version = "0.3.8", optional = true }
 bitvec = { version = "1.0.1", default-features = false, features = ["atomic"] }
+parity-reconstruct = { path = "../parity-reconstruct" , default-features = false, optional = true }
 
 [dev-dependencies]
 insta = "1.39.0"

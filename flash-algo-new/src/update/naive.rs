@@ -1,11 +1,15 @@
 use crate::{
     fragmentation::get_parity_matrix_row,
+    layout::{total_status, Kind, NumberOfSegments, SegmentSize, TotalStatus, DATA_REGION_OFFSET},
     manager::{
+        indexed_headers,
         layout::segment_status_table::{DATA_NOT_WRITTEN, DATA_WRITTEN},
-        ManagerError, ScratchRam, Slot,
+        ManagerError, ScratchRam, Slot, SlotManager,
     },
     spi_flash::{SpiFlash, SpiFlashError},
 };
+
+use super::SegmentOutcome;
 
 /// The outcome of a call to [`Updater::write_segment_internal`]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -32,32 +36,17 @@ enum WriteSegmentOutcome {
     FirmwareComplete,
 }
 
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum SegmentOutcome {
-    /// Frame was consumed, and no parity check is recommended at the moment.
-    ///
-    /// This typically means either:
-    ///
-    /// * We haven't finished receiving all firmware frames, AND there are no
-    ///   parity frames
-    /// * This was a complete duplicate frame (for example if this is a retry).
-    Consumed,
-    /// Firmware is complete, can be checked and finished.
-    FirmwareComplete,
-}
-
 /// [`Updater`] is the main application interface while a single FUOTA process is active.
 ///
 /// It contains methods for receiving and checking data.
 pub struct Updater {
-    pub(crate) firmware_slot: Slot,
-    pub(crate) total_firmware_segments: u32,
-    pub(crate) remaining_firmware_segments: u32,
+    firmware_slot: Slot,
+    total_firmware_segments: u32,
+    remaining_firmware_segments: u32,
 
-    pub(crate) parity_slot: Slot,
-    pub(crate) total_parity_segments: u32,
-    pub(crate) remaining_parity_segments: u32,
+    parity_slot: Slot,
+    total_parity_segments: u32,
+    remaining_parity_segments: u32,
 }
 
 impl Updater {
@@ -403,6 +392,161 @@ impl Updater {
         self.parity_slot.mark_ext_status_complete(flash).await?;
 
         Ok(self.firmware_slot.index())
+    }
+}
+
+impl<const N: usize> SlotManager<N> {
+    pub async fn start_update<T: SpiFlash>(
+        &mut self,
+        flash: &mut T,
+        scratch: &mut ScratchRam,
+        segment_size: u32,
+        firmware_segments: u32,
+    ) -> Result<Updater, ManagerError<T::Error>> {
+        self.is_reasonably_sized(segment_size, firmware_segments)?;
+
+        let parity_segments =
+            (self.slot_size.saturating_sub(DATA_REGION_OFFSET) as u32) / segment_size;
+
+        let (mut firmware_slot, mut parity_slot) = self.alloc_slotpair(flash, scratch).await?;
+        firmware_slot.set_kind(Kind::Firmware, flash).await?;
+        firmware_slot
+            .set_layout(
+                NumberOfSegments(firmware_segments),
+                SegmentSize(segment_size),
+                flash,
+            )
+            .await?;
+        parity_slot.set_kind(Kind::Parity, flash).await?;
+        parity_slot
+            .set_layout(
+                NumberOfSegments(parity_segments),
+                SegmentSize(segment_size),
+                flash,
+            )
+            .await?;
+
+        Ok(Updater {
+            firmware_slot,
+            total_firmware_segments: firmware_segments,
+            remaining_firmware_segments: firmware_segments,
+            parity_slot,
+            total_parity_segments: parity_segments,
+            remaining_parity_segments: parity_segments,
+        })
+    }
+
+    pub(crate) async fn try_recover_inner<T: SpiFlash>(
+        &mut self,
+        flash: &mut T,
+        scratch: &mut ScratchRam,
+    ) -> Result<Option<Updater>, ManagerError<T::Error>> {
+        let headers = self.load_headers(flash, scratch).await?;
+
+        let mut newest: Option<(usize, &crate::manager::layout::SlotHeader)> = None;
+        let mut second_newest = None;
+
+        for (i, hdr) in indexed_headers(&headers) {
+            if let Some(newest_inner) = newest {
+                if newest_inner.1.seq_no < hdr.seq_no {
+                    second_newest = newest;
+                    newest = Some((i, hdr));
+                } else if let Some(second_newest_inner) = second_newest {
+                    if second_newest_inner.1.seq_no < hdr.seq_no {
+                        second_newest = Some((i, hdr));
+                    }
+                } else {
+                    second_newest = Some((i, hdr));
+                }
+            } else {
+                newest = Some((i, hdr));
+            }
+        }
+
+        let Some(newest) = newest else {
+            return Ok::<_, ManagerError<T::Error>>(None);
+        };
+        let Some(second_newest) = second_newest else {
+            return Ok(None);
+        };
+
+        // Basic sanity checks
+        if total_status(newest.1) != TotalStatus::AppWriteInProgress {
+            return Ok(None);
+        }
+        if newest.1.kind != Kind::Parity {
+            return Ok(None);
+        }
+        if total_status(second_newest.1) != TotalStatus::AppWriteInProgress {
+            return Ok(None);
+        }
+        if second_newest.1.kind != Kind::Firmware {
+            return Ok(None);
+        }
+        if newest.1.segment_size != second_newest.1.segment_size {
+            return Ok(None);
+        }
+        if self
+            .is_reasonably_sized::<T::Error>(
+                second_newest.1.segment_size.0,
+                second_newest.1.num_segments.0,
+            )
+            .is_err()
+        {
+            return Ok(None);
+        }
+
+        // Now check the "other" items to see if they need remediation
+        for (i, hdr) in indexed_headers(&headers) {
+            if i == newest.0 || i == second_newest.0 {
+                continue;
+            }
+
+            match total_status(hdr) {
+                TotalStatus::AppWriteInProgress => {
+                    let mut slot = self.open(i);
+                    slot.mark_ext_status_aborted(flash).await?;
+                }
+                TotalStatus::BootloadWriteInProgress | TotalStatus::InvalidNeedsErase => {
+                    let mut slot = self.open(i);
+                    slot.clear(flash).await?;
+                }
+                TotalStatus::BlankSlot
+                | TotalStatus::AppWriteAborted
+                | TotalStatus::FirstBootPendingAck
+                | TotalStatus::ConfirmedImage
+                | TotalStatus::RejectedImage => {}
+            }
+        }
+
+        let mut firmware_slot = self.open(second_newest.0);
+        let mut parity_slot = self.open(newest.0);
+
+        let firmware_status = firmware_slot
+            .load_status_array(
+                &mut scratch.received_firmware_scratch,
+                &mut scratch.parity_temp_page,
+                flash,
+            )
+            .await?;
+        let firmware_done = firmware_status.filter(|v| *v).count() as u32;
+        let parity_status = parity_slot
+            .load_status_array(
+                &mut scratch.received_parity_scratch,
+                &mut scratch.parity_temp_page,
+                flash,
+            )
+            .await?;
+        let parity_done = parity_status.filter(|v| *v).count() as u32;
+
+        Ok(Some(Updater {
+            firmware_slot,
+            total_firmware_segments: second_newest.1.num_segments.0,
+            remaining_firmware_segments: second_newest.1.num_segments.0 - firmware_done,
+            parity_slot,
+            total_parity_segments: newest.1.num_segments.0,
+            remaining_parity_segments: newest.1.num_segments.0 - parity_done,
+        }))
     }
 }
 

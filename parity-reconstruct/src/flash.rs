@@ -100,12 +100,18 @@ where
     }
 
     fn flash_row_address_offset(m: usize) -> u32 {
-        let mut offset = 0;
-        for i in 0..m {
-            offset += Self::flash_row_size(i) as u32;
-        }
+        let completes = m / (F::WRITE_SIZE * 8);
+        let partials = m % (F::WRITE_SIZE * 8);
+        let partial_len = Self::flash_row_size(m);
 
-        offset
+        // Number of complete groups of F::WRITE_SIZE * 8 and the storage
+        // they take, plus the size of the incomplete group.
+        //
+        // The size of the complete groups follows from the triangle numbers, which
+        // give the number of chunks * 2 (assuming 1 member per group), which are F::WRITE_SIZE big,
+        // multiplied by half the group size (4 * F::WRITE)
+        (completes * (completes + 1) * 4 * F::WRITE_SIZE * F::WRITE_SIZE + partials * partial_len)
+            as u32
     }
 }
 
@@ -463,15 +469,16 @@ const fn previous_multiple_of(val: usize, rhs: usize) -> usize {
 mod tests {
     extern crate std;
 
-    use crate::{tests::TestParity, BlockResult, Reconstructor};
+    use mem_flash::MemFlash;
+
+    use crate::{tests::TestParity, BlockResult, Reconstructor, ReconstructorData};
 
     use super::*;
 
     #[futures_test::test]
     async fn simple_reconstruction_test() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
-            4,
-            1,
+        let mut recdata = ReconstructorData::new(4, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 1, [u8; 1], [u8; 1]> = recdata.hydrate(
             TestParity::<4>,
             FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400)
                 .await
@@ -602,6 +609,159 @@ mod tests {
             Ok(BitArray::new([
                 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01
             ]))
+        );
+    }
+
+    #[test]
+    fn test_matrix_row_addresses() {
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(0),
+            0
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(1),
+            1
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(2),
+            2
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(3),
+            3
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(4),
+            4
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(5),
+            5
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(6),
+            6
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(7),
+            7
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(8),
+            8
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(9),
+            10
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(10),
+            12
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(11),
+            14
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(12),
+            16
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(13),
+            18
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(14),
+            20
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(15),
+            22
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(16),
+            24
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 1>>::flash_row_address_offset(17),
+            27
+        );
+
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(0),
+            0
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(1),
+            2
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(2),
+            4
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(3),
+            6
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(4),
+            8
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(5),
+            10
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(6),
+            12
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(7),
+            14
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(8),
+            16
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(9),
+            18
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(10),
+            20
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(11),
+            22
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(12),
+            24
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(13),
+            26
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(14),
+            28
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(15),
+            30
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(16),
+            32
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(17),
+            36
+        );
+        assert_eq!(
+            FlashMatrixStorage::<MemFlash<1024, 256, 2>>::flash_row_address_offset(33),
+            102
         );
     }
 
