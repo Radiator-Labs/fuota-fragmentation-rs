@@ -166,6 +166,20 @@ where
 
         Ok(data)
     }
+
+    fn num_rows(&self) -> usize {
+        let storage_size = self.flash_range.len();
+        let mut matrix_size = 0usize;
+        let mut num_rows = 0usize;
+        loop {
+            matrix_size = matrix_size.saturating_add(Self::flash_row_size(num_rows));
+            if matrix_size < storage_size && num_rows < BitArray::<[u8; N]>::ZERO.len() {
+                num_rows += 1;
+            } else {
+                return num_rows;
+            }
+        }
+    }
 }
 
 /// Implementation of the [ParityStorage] trait.
@@ -195,13 +209,13 @@ where
 
 /// Implemented with a simple algorithm.
 /// Between every parity block there is a little bit of potential padding.
-impl<F, const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for FlashParityStorage<F>
+impl<F> ParityStorage for FlashParityStorage<F>
 where
     F: embedded_storage_async::nor_flash::NorFlash,
 {
     type Error = F::Error;
 
-    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error> {
         let rounded_up_len = data.len().next_multiple_of(F::WRITE_SIZE);
         let rounded_down_len = previous_multiple_of(data.len(), F::WRITE_SIZE);
         let offset = m * rounded_up_len;
@@ -228,9 +242,7 @@ where
         Ok(())
     }
 
-    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
-        let mut data = [0; BLOCKSIZE];
-
+    async fn get(&mut self, m: usize, data: &mut [u8]) -> Result<(), Self::Error> {
         let rounded_up_len = data.len().next_multiple_of(F::WRITE_SIZE);
         let rounded_down_len = previous_multiple_of(data.len(), F::WRITE_SIZE);
         let offset = m * rounded_up_len;
@@ -255,7 +267,7 @@ where
             data1.copy_from_slice(&buffer[..data1.len()]);
         }
 
-        Ok(data)
+        Ok(())
     }
 }
 
@@ -284,18 +296,18 @@ where
         Ok(Self { flash, flash_range })
     }
 
-    fn split_slice_addrs<'data, const BLOCKSIZE: usize>(
+    fn split_slice_addrs_mut<'data>(
         &self,
         m: usize,
-        data: &'data mut [u8; BLOCKSIZE],
+        data: &'data mut [u8],
     ) -> (
         (&'data mut [u8], u32),
         (&'data mut [u8], u32),
         (&'data mut [u8], u32),
     ) {
-        let true_start_address = self.flash_range.start + (m * BLOCKSIZE) as u32;
+        let true_start_address = self.flash_range.start + (m * data.len()) as u32;
         let start_address_align_offset = true_start_address % F::WRITE_SIZE as u32;
-        let true_end_address = self.flash_range.start + ((m + 1) * BLOCKSIZE) as u32;
+        let true_end_address = self.flash_range.start + ((m + 1) * data.len()) as u32;
         let end_address_align_offset = true_end_address % F::WRITE_SIZE as u32;
 
         let padded_start_address = if start_address_align_offset != 0 {
@@ -330,20 +342,63 @@ where
             (pad_end, body_start_address + body_len as u32),
         )
     }
+
+    fn split_slice_addrs<'data>(
+        &self,
+        m: usize,
+        data: &'data [u8],
+    ) -> ((&'data [u8], u32), (&'data [u8], u32), (&'data [u8], u32)) {
+        let true_start_address = self.flash_range.start + (m * data.len()) as u32;
+        let start_address_align_offset = true_start_address % F::WRITE_SIZE as u32;
+        let true_end_address = self.flash_range.start + ((m + 1) * data.len()) as u32;
+        let end_address_align_offset = true_end_address % F::WRITE_SIZE as u32;
+
+        let padded_start_address = if start_address_align_offset != 0 {
+            true_start_address - start_address_align_offset
+        } else {
+            true_start_address
+        };
+
+        let body_start_address = if start_address_align_offset != 0 {
+            padded_start_address + F::WRITE_SIZE as u32
+        } else {
+            true_start_address
+        };
+
+        let (pad_start, body) = if start_address_align_offset != 0 {
+            data.split_at(F::WRITE_SIZE - (true_start_address - padded_start_address) as usize)
+        } else {
+            (&[][..], data)
+        };
+
+        let (body, pad_end) = if end_address_align_offset != 0 {
+            body.split_at(body.len() - end_address_align_offset as usize)
+        } else {
+            (body, &[][..])
+        };
+
+        let body_len = body.len();
+
+        (
+            (pad_start, padded_start_address),
+            (body, body_start_address),
+            (pad_end, body_start_address + body_len as u32),
+        )
+    }
 }
 
 /// Algorithm that doesn't have any padding between blocks
-impl<F, const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for FlashDataStorage<F>
+impl<F> DataStorage for FlashDataStorage<F>
 where
     F: embedded_storage_async::nor_flash::MultiwriteNorFlash,
 {
     type Error = F::Error;
 
-    async fn store(&mut self, m: usize, mut data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
-        assert!(BLOCKSIZE >= F::WRITE_SIZE);
+    async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error> {
+        assert!(data.len() >= F::WRITE_SIZE);
 
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
-            self.split_slice_addrs(m, &mut data);
+            self.split_slice_addrs(m, data);
 
         if !pad_start.is_empty() {
             let mut buffer = [0xFF; MAX_WORD_SIZE];
@@ -366,11 +421,9 @@ where
         Ok(())
     }
 
-    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
-        let mut data = [0; BLOCKSIZE];
-
+    async fn get(&mut self, m: usize, data: &mut [u8]) -> Result<(), Self::Error> {
         let ((pad_start, start_addr), (body, body_addr), (pad_end, end_addr)) =
-            self.split_slice_addrs(m, &mut data);
+            self.split_slice_addrs_mut(m, data);
 
         if !pad_start.is_empty() {
             let mut buffer = [0x00; MAX_WORD_SIZE];
@@ -392,7 +445,7 @@ where
             pad_end.copy_from_slice(&buffer[..pad_end.len()]);
         }
 
-        Ok(data)
+        Ok(())
     }
 }
 
@@ -418,6 +471,7 @@ mod tests {
     async fn simple_reconstruction_test() {
         let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
             4,
+            1,
             TestParity::<4>,
             FlashMatrixStorage::new(mem_flash::MemFlash::<1024, 128, 1>::new(0), 0..0x400)
                 .await
@@ -430,23 +484,23 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(
-            rec.handle_block(0, [1]).await.unwrap(),
+            rec.handle_block(0, &[1]).await.unwrap(),
             BlockResult::NeedMore
         );
         assert_eq!(
-            rec.handle_block(2, [3]).await.unwrap(),
+            rec.handle_block(2, &[3]).await.unwrap(),
             BlockResult::NeedMore
         );
         assert_eq!(
-            rec.handle_block(9, [2]).await.unwrap(),
+            rec.handle_block(9, &[2]).await.unwrap(),
             BlockResult::NeedMore
         );
         assert_eq!(
-            rec.handle_block(10, [1]).await.unwrap(),
+            rec.handle_block(10, &[1]).await.unwrap(),
             BlockResult::NeedMore
         );
         assert_eq!(
-            rec.handle_block(14, [6]).await.unwrap(),
+            rec.handle_block(14, &[6]).await.unwrap(),
             BlockResult::Done(4)
         );
     }
@@ -459,11 +513,11 @@ mod tests {
                 .await
                 .unwrap();
 
-        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).await.unwrap();
-        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29])
+        ds.store(0, &[1, 2, 3, 4, 5, 6, 7, 8, 9]).await.unwrap();
+        ds.store(2, &[21, 22, 23, 24, 25, 26, 27, 28, 29])
             .await
             .unwrap();
-        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19])
+        ds.store(1, &[11, 12, 13, 14, 15, 16, 17, 18, 19])
             .await
             .unwrap();
 
@@ -477,9 +531,13 @@ mod tests {
         );
         assert_eq!(&ds.flash.mem[0x100..][9 * 3..], &[0xFF; 0x300 - 9 * 3]);
 
-        assert_eq!(ds.get(0).await, Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
-        assert_eq!(ds.get(1).await, Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
-        assert_eq!(ds.get(2).await, Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
+        let mut buf = [0u8; 9];
+        assert!(ds.get(0, &mut buf).await.is_ok());
+        assert_eq!(buf, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert!(ds.get(1, &mut buf).await.is_ok());
+        assert_eq!(buf, [11, 12, 13, 14, 15, 16, 17, 18, 19]);
+        assert!(ds.get(2, &mut buf).await.is_ok());
+        assert_eq!(buf, [21, 22, 23, 24, 25, 26, 27, 28, 29]);
     }
 
     #[futures_test::test]
@@ -555,17 +613,21 @@ mod tests {
                 .await
                 .unwrap();
 
-        ds.store(0, [1, 2, 3, 4, 5, 6, 7, 8, 9]).await.unwrap();
-        ds.store(2, [21, 22, 23, 24, 25, 26, 27, 28, 29])
+        ds.store(0, &[1, 2, 3, 4, 5, 6, 7, 8, 9]).await.unwrap();
+        ds.store(2, &[21, 22, 23, 24, 25, 26, 27, 28, 29])
             .await
             .unwrap();
-        ds.store(1, [11, 12, 13, 14, 15, 16, 17, 18, 19])
+        ds.store(1, &[11, 12, 13, 14, 15, 16, 17, 18, 19])
             .await
             .unwrap();
 
-        assert_eq!(ds.get(0).await, Ok([1, 2, 3, 4, 5, 6, 7, 8, 9]));
-        assert_eq!(ds.get(1).await, Ok([11, 12, 13, 14, 15, 16, 17, 18, 19]));
-        assert_eq!(ds.get(2).await, Ok([21, 22, 23, 24, 25, 26, 27, 28, 29]));
+        let mut buf = [0u8; 9];
+        assert!(ds.get(0, &mut buf).await.is_ok());
+        assert_eq!(buf, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert!(ds.get(1, &mut buf).await.is_ok());
+        assert_eq!(buf, [11, 12, 13, 14, 15, 16, 17, 18, 19]);
+        assert!(ds.get(2, &mut buf).await.is_ok());
+        assert_eq!(buf, [21, 22, 23, 24, 25, 26, 27, 28, 29]);
     }
 
     // Taken and adapted from: https://github.com/lulf/embedded-storage-inmemory

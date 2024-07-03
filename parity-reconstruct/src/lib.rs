@@ -58,10 +58,13 @@ pub trait MatrixStorage<V: BitViewSized> {
     ///
     /// m is smaller than BitArray<V>::len()
     async fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error>;
+    /// Get the number of rows this storage can store. MUST be
+    /// smaller or equal to BitArray<V>::len()
+    fn num_rows(&self) -> usize;
 }
 
 /// Storage trait for parity blocks
-pub trait ParityStorage<const BLOCKSIZE: usize> {
+pub trait ParityStorage {
     /// The error type of the storage
     type Error;
     /// Store a parity block.
@@ -69,29 +72,41 @@ pub trait ParityStorage<const BLOCKSIZE: usize> {
     /// Called at most once for each value of m.
     ///
     /// m is smaller than BitArray<V>::len()
-    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error>;
+    ///
+    /// Length of data will always be the block size
+    /// of the reconstructor
+    async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error>;
     /// Get a block previously stored
     ///
     /// Called only after a corresponding store call
     /// for m.
     ///
     /// m is smaller than BitArray<V>::len()
-    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
+    ///
+    /// Length of the buffer will always be the block
+    /// size of the reconstructor
+    async fn get(&mut self, m: usize, buf: &mut [u8]) -> Result<(), Self::Error>;
 }
 
 /// Storage trait for reconstructed data.
-pub trait DataStorage<const BLOCKSIZE: usize> {
+pub trait DataStorage {
     /// The error type of the storage
     type Error;
     /// Store a newly received or reconstructed block.
     ///
     /// Called exactly once for each value of m in 0..N
-    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error>;
+    ///
+    /// Length of data will always be the block size
+    /// of the reconstructor
+    async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error>;
     /// Get a block previously received.
     ///
     /// Called only after a corresponding store call
     /// for m.
-    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error>;
+    ///
+    /// Length of the buffer will always be the block
+    /// size of the reconstructor
+    async fn get(&mut self, m: usize, buf: &mut [u8]) -> Result<(), Self::Error>;
 }
 
 /// The error type of the reconstructor
@@ -126,10 +141,24 @@ pub enum BlockResult {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReconstructorData<U: BitViewSized, V: BitViewSized> {
-    n: usize,
-    l: usize,
-    done: BitArray<U>,
-    used: BitArray<V>,
+    /// Number of blocks of actual data
+    pub n: usize,
+    /// Number of independent parity blocks needed
+    /// is 0 when all elements of used are false, and
+    /// n - the number of elements of done that are
+    /// true otherwise.
+    pub l: usize,
+    /// Size of the data blocks
+    pub blocksize: usize,
+    /// Data segments written, matches
+    /// the data blocks in the DataStorage
+    /// written to
+    pub done: BitArray<U>,
+    /// Parity segments written, matches
+    /// the parity blocks in the ParityStorage
+    /// written to as well as the rows
+    /// in the matrix written to.
+    pub used: BitArray<V>,
 }
 
 /// Reconstructor for reconstructing data
@@ -141,12 +170,13 @@ pub struct Reconstructor<
     Matrix,
     ParityData,
     Data,
-    const BLOCKSIZE: usize,
+    const MAX_BLOCKSIZE: usize,
     U: BitViewSized,
     V: BitViewSized,
 > {
     n: usize,
     l: usize,
+    blocksize: usize,
     parity: Parity,
     matrix: Matrix,
     parityblocks: ParityData,
@@ -158,27 +188,30 @@ pub struct Reconstructor<
 impl<
         Parity: ParityMatrix<U>,
         Matrix: MatrixStorage<V>,
-        ParityData: ParityStorage<BLOCKSIZE>,
-        Data: DataStorage<BLOCKSIZE>,
-        const BLOCKSIZE: usize,
+        ParityData: ParityStorage,
+        Data: DataStorage,
+        const MAX_BLOCKSIZE: usize,
         U: BitViewSized,
         V: BitViewSized,
-    > Reconstructor<Parity, Matrix, ParityData, Data, BLOCKSIZE, U, V>
+    > Reconstructor<Parity, Matrix, ParityData, Data, MAX_BLOCKSIZE, U, V>
 {
     /// Create a new reconstructor. The matrix storage, parity block
     /// storage and data block storage are all assumed to be empty
     /// to start (e.g., any index can still be written to).
     pub fn new(
         n: usize,
+        blocksize: usize,
         parity: Parity,
         matrix: Matrix,
         parityblocks: ParityData,
         datablocks: Data,
     ) -> Self {
         debug_assert!(n <= BitArray::<U>::ZERO.len());
+        assert!(blocksize <= MAX_BLOCKSIZE);
         Reconstructor {
             n,
             l: 0,
+            blocksize,
             parity,
             matrix,
             parityblocks,
@@ -197,9 +230,11 @@ impl<
         parityblocks: ParityData,
         datablocks: Data,
     ) -> Self {
+        assert!(data.blocksize <= MAX_BLOCKSIZE);
         Reconstructor {
             n: data.n,
             l: data.l,
+            blocksize: data.blocksize,
             parity,
             matrix,
             parityblocks,
@@ -229,10 +264,11 @@ impl<
     async fn handle_data_block(
         &mut self,
         index: usize,
-        data: [u8; BLOCKSIZE],
+        data: &[u8],
     ) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
         debug_assert!(self.n > index);
         debug_assert_eq!(self.l, 0);
+        assert_eq!(data.len(), self.blocksize);
 
         if !self.done[index] {
             self.done.set(index, true);
@@ -249,20 +285,27 @@ impl<
     async fn handle_parity_block(
         &mut self,
         index: usize,
-        mut data: [u8; BLOCKSIZE],
+        data: &[u8],
     ) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
         debug_assert_ne!(self.l, 0);
+        assert_eq!(data.len(), self.blocksize);
         let row = self.parity.row(index);
+
+        let mut data_buf = [0u8; MAX_BLOCKSIZE];
+        data_buf[..data.len()].copy_from_slice(data);
+        let data: &mut [u8] = &mut data_buf[..data.len()];
+
+        let mut tmp_buf = [0u8; MAX_BLOCKSIZE];
+        let tmp = &mut tmp_buf[..data.len()];
 
         // remove parity from already received datablocks.
         for (i, (rowel, have_data)) in row.iter().zip(self.done.iter()).enumerate().take(self.n) {
             if *rowel && *have_data {
-                let other_block = self
-                    .datablocks
-                    .get(i)
+                self.datablocks
+                    .get(i, tmp)
                     .await
                     .map_err(Error::DataStorageError)?;
-                for (datael, otherel) in data.iter_mut().zip(other_block.iter()) {
+                for (datael, otherel) in data.iter_mut().zip(tmp.iter()) {
                     *datael ^= *otherel
                 }
             }
@@ -287,13 +330,12 @@ impl<
         loop {
             if reducedrow[working_head] && self.used[working_head] {
                 // eliminate
-                let other_block = self
-                    .parityblocks
-                    .get(working_head)
+                self.parityblocks
+                    .get(working_head, tmp)
                     .await
                     .map_err(Error::ParityStorageError)?;
                 for (i, el) in data.iter_mut().enumerate() {
-                    *el ^= other_block[i];
+                    *el ^= tmp[i];
                 }
                 reducedrow ^= self
                     .matrix
@@ -343,10 +385,14 @@ impl<
 
     // Reconstruct the final data blocks from parity.
     async fn finish(&mut self) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
+        let mut output_buf = [0u8; MAX_BLOCKSIZE];
+        let output = &mut output_buf[..self.blocksize];
+        let mut other_buf = [0u8; MAX_BLOCKSIZE];
+        let other = &mut other_buf[..self.blocksize];
+
         for i in 0..self.l {
-            let mut output = self
-                .parityblocks
-                .get(i)
+            self.parityblocks
+                .get(i, output)
                 .await
                 .map_err(Error::ParityStorageError)?;
             let matrix_row = self
@@ -356,13 +402,12 @@ impl<
                 .map_err(Error::MatrixStorageError)?;
             for j in 0..i {
                 if matrix_row[j] {
-                    let other_block = self
-                        .datablocks
-                        .get(self.reduced_to_full(j))
+                    self.datablocks
+                        .get(self.reduced_to_full(j), other)
                         .await
                         .map_err(Error::DataStorageError)?;
                     for (k, el) in output.iter_mut().enumerate() {
-                        *el ^= other_block[k];
+                        *el ^= other[k];
                     }
                 }
             }
@@ -380,16 +425,20 @@ impl<
     pub async fn handle_block(
         &mut self,
         index: usize,
-        data: [u8; BLOCKSIZE],
+        data: &[u8],
     ) -> Result<BlockResult, Error<Matrix::Error, ParityData::Error, Data::Error>> {
+        assert_eq!(data.len(), self.blocksize);
         if self.is_complete() {
-            return Ok(BlockResult::Done(self.n * BLOCKSIZE));
+            return Ok(BlockResult::Done(self.n * self.blocksize));
         }
 
         if index >= self.n && self.l == 0 {
             self.init_stage2();
 
-            if BitArray::<V>::ZERO.len() < self.l {
+            let max_l = self.matrix.num_rows();
+            debug_assert!(max_l <= BitArray::<V>::ZERO.len());
+
+            if BitArray::<V>::ZERO.len() < self.l || max_l < self.l {
                 // Given this value of l, we would
                 // overflow the matrix rows, abort.
                 self.l = 0;
@@ -403,7 +452,7 @@ impl<
         if self.l == 0 {
             self.handle_data_block(index, data).await?;
             if self.is_complete() {
-                Ok(BlockResult::Done(self.n * BLOCKSIZE))
+                Ok(BlockResult::Done(self.n * self.blocksize))
             } else {
                 Ok(BlockResult::NeedMore)
             }
@@ -414,7 +463,7 @@ impl<
                 // Ensure we actually produce the
                 // final data blocks.
                 self.finish().await?;
-                Ok(BlockResult::Done(self.n * BLOCKSIZE))
+                Ok(BlockResult::Done(self.n * self.blocksize))
             } else {
                 Ok(BlockResult::NeedMore)
             }
@@ -428,6 +477,7 @@ impl<
         let Self {
             n,
             l,
+            blocksize,
             parity,
             matrix,
             parityblocks,
@@ -437,7 +487,13 @@ impl<
         } = self;
 
         (
-            ReconstructorData { n, l, done, used },
+            ReconstructorData {
+                n,
+                l,
+                blocksize,
+                done,
+                used,
+            },
             parity,
             matrix,
             parityblocks,
@@ -501,6 +557,10 @@ pub(crate) mod tests {
         async fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error> {
             Ok(self.data[m].clone())
         }
+
+        fn num_rows(&self) -> usize {
+            self.data.len()
+        }
     }
 
     struct BlockStorage<const BLOCKSIZE: usize> {
@@ -517,54 +577,57 @@ pub(crate) mod tests {
         }
     }
 
-    impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
+    impl<const BLOCKSIZE: usize> DataStorage for BlockStorage<BLOCKSIZE> {
         type Error = core::convert::Infallible;
 
-        async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+        async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error> {
             assert!(!self.used[m]);
-            self.data[m] = data;
+            self.data[m] = data.try_into().unwrap();
             self.used[m] = true;
 
             Ok(())
         }
 
-        async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+        async fn get(&mut self, m: usize, buf: &mut [u8]) -> Result<(), Self::Error> {
             assert!(self.used[m]);
-            Ok(self.data[m])
+            buf.copy_from_slice(&self.data[m]);
+            Ok(())
         }
     }
 
-    impl<const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
+    impl<const BLOCKSIZE: usize> ParityStorage for BlockStorage<BLOCKSIZE> {
         type Error = core::convert::Infallible;
 
-        async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+        async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error> {
             assert!(!self.used[m]);
-            self.data[m] = data;
+            self.data[m] = data.try_into().unwrap();
             self.used[m] = true;
 
             Ok(())
         }
 
-        async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+        async fn get(&mut self, m: usize, buf: &mut [u8]) -> Result<(), Self::Error> {
             assert!(self.used[m]);
-            Ok(self.data[m])
+            buf.copy_from_slice(&self.data[m]);
+            Ok(())
         }
     }
 
     #[futures_test::test]
     async fn simple_reconstruction_test() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
             4,
+            1,
             TestParity::<4>,
             TestMatrixStorage::new(2),
-            BlockStorage::new(2),
-            BlockStorage::new(4),
+            BlockStorage::<1>::new(2),
+            BlockStorage::<1>::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(2, [3]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(9, [2]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(10, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(14, [6]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(0, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, &[3]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(9, &[2]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(10, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(14, &[6]).await, Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -572,18 +635,19 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn nontrivial_relation() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
             4,
+            1,
             TestParity::<4>,
             TestMatrixStorage::new(3),
-            BlockStorage::new(3),
-            BlockStorage::new(4),
+            BlockStorage::<1>::new(3),
+            BlockStorage::<1>::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(10, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(14, [6]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(16, [7]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(19, [4]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(0, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(10, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(14, &[6]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(16, &[7]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, &[4]).await, Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -591,18 +655,19 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn no_parity_needed() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
             4,
+            1,
             TestParity::<4>,
             TestMatrixStorage::new(0),
-            BlockStorage::new(0),
-            BlockStorage::new(4),
+            BlockStorage::<1>::new(0),
+            BlockStorage::<1>::new(4),
         );
 
-        assert_eq!(rec.handle_block(0, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(1, [2]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(2, [3]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(3, [4]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(0, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, &[2]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, &[3]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(3, &[4]).await, Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -610,22 +675,23 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn repeats_are_ok() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
             4,
+            1,
             TestParity::<4>,
             TestMatrixStorage::new(0),
-            BlockStorage::new(0),
-            BlockStorage::new(4),
+            BlockStorage::<1>::new(0),
+            BlockStorage::<1>::new(4),
         );
 
-        assert_eq!(rec.handle_block(0, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(0, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(1, [2]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(1, [2]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(2, [3]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(2, [3]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(3, [4]).await, Ok(BlockResult::Done(4)));
-        assert_eq!(rec.handle_block(3, [4]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(0, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(0, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, &[2]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, &[2]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, &[3]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, &[3]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(3, &[4]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(3, &[4]).await, Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
@@ -633,68 +699,70 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn too_many_missing() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 2], [u8; 1]>::new(
+        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 2], [u8; 1]>::new(
             16,
+            1,
             TestParity::<16>,
             TestMatrixStorage::new(8),
-            BlockStorage::new(8),
-            BlockStorage::new(16),
+            BlockStorage::<1>::new(8),
+            BlockStorage::<1>::new(16),
         );
 
-        assert_eq!(rec.handle_block(0, [0]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(0, &[0]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(1, [1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(1, &[1]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(2, [2]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, &[2]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(3, [3]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(3, &[3]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(4, [4]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(4, &[4]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(5, [5]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(5, &[5]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(6, [6]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(6, &[6]).await, Ok(BlockResult::NeedMore));
         assert_eq!(
-            rec.handle_block(19, [1]).await,
+            rec.handle_block(19, &[1]).await,
             Ok(BlockResult::TooManyMissing)
         );
-        assert_eq!(rec.handle_block(7, [7]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(19, [1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(7, &[7]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(19, &[1]).await, Ok(BlockResult::NeedMore));
     }
 
     #[futures_test::test]
     async fn out_of_order() {
-        let mut rec = Reconstructor::<_, _, _, _, 1, [u8; 1], [u8; 1]>::new(
+        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
             4,
+            1,
             TestParity::<4>,
             TestMatrixStorage::new(3),
-            BlockStorage::new(3),
-            BlockStorage::new(4),
+            BlockStorage::<1>::new(3),
+            BlockStorage::<1>::new(4),
         );
-        assert_eq!(rec.handle_block(0, [1]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(14, [6]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(9, [2]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(2, [3]).await, Ok(BlockResult::NeedMore));
-        assert_eq!(rec.handle_block(10, [1]).await, Ok(BlockResult::Done(4)));
-        assert_eq!(rec.handle_block(10, [1]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(0, &[1]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(14, &[6]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(9, &[2]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(2, &[3]).await, Ok(BlockResult::NeedMore));
+        assert_eq!(rec.handle_block(10, &[1]).await, Ok(BlockResult::Done(4)));
+        assert_eq!(rec.handle_block(10, &[1]).await, Ok(BlockResult::Done(4)));
 
         assert_eq!(rec.datablocks.used, [true, true, true, true]);
         assert_eq!(rec.datablocks.data, [[1], [2], [3], [4]]);
