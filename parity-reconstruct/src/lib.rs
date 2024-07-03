@@ -164,8 +164,9 @@ pub struct ReconstructorData<U: BitViewSized, V: BitViewSized> {
 /// Reconstructor for reconstructing data
 /// from an incomplete stream of blocks and
 /// parity data.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Reconstructor<
+    'a,
     Parity,
     Matrix,
     ParityData,
@@ -174,18 +175,61 @@ pub struct Reconstructor<
     U: BitViewSized,
     V: BitViewSized,
 > {
-    n: usize,
-    l: usize,
-    blocksize: usize,
+    inner: &'a mut ReconstructorData<U, V>,
     parity: Parity,
     matrix: Matrix,
     parityblocks: ParityData,
     datablocks: Data,
-    done: BitArray<U>,
-    used: BitArray<V>,
+}
+
+impl<U: BitViewSized, V: BitViewSized> ReconstructorData<U, V> {
+    /// Create new reconstructor state.
+    pub fn new(n: usize, blocksize: usize) -> Self {
+        debug_assert!(n <= BitArray::<U>::ZERO.len());
+        Self {
+            n,
+            l: 0,
+            blocksize,
+            done: BitArray::ZERO,
+            used: BitArray::ZERO,
+        }
+    }
+
+    /// Prepare the reconstruction state for use with backing storage
+    /// for the various elements.
+    ///
+    /// The contents of the matrix, parityblocks and datablocks must match
+    /// the content at the time of the last desiccate call, or they must all
+    /// be empty in the case of a newly created reconstructor state.
+    ///
+    /// For a given [ReconstructorData], all hydrate calls must use the same matrix
+    /// otherwise reconstruction will not create proper data.
+    pub fn hydrate<
+        const MAX_BLOCKSIZE: usize,
+        Parity: ParityMatrix<U>,
+        Matrix: MatrixStorage<V>,
+        ParityData: ParityStorage,
+        Data: DataStorage,
+    >(
+        &mut self,
+        parity: Parity,
+        matrix: Matrix,
+        parityblocks: ParityData,
+        datablocks: Data,
+    ) -> Reconstructor<'_, Parity, Matrix, ParityData, Data, MAX_BLOCKSIZE, U, V> {
+        assert!(self.blocksize <= MAX_BLOCKSIZE);
+        Reconstructor {
+            inner: self,
+            parity,
+            matrix,
+            parityblocks,
+            datablocks,
+        }
+    }
 }
 
 impl<
+        'a,
         Parity: ParityMatrix<U>,
         Matrix: MatrixStorage<V>,
         ParityData: ParityStorage,
@@ -193,71 +237,46 @@ impl<
         const MAX_BLOCKSIZE: usize,
         U: BitViewSized,
         V: BitViewSized,
-    > Reconstructor<Parity, Matrix, ParityData, Data, MAX_BLOCKSIZE, U, V>
+    > Reconstructor<'a, Parity, Matrix, ParityData, Data, MAX_BLOCKSIZE, U, V>
 {
-    /// Create a new reconstructor. The matrix storage, parity block
-    /// storage and data block storage are all assumed to be empty
-    /// to start (e.g., any index can still be written to).
-    pub fn new(
-        n: usize,
-        blocksize: usize,
-        parity: Parity,
-        matrix: Matrix,
-        parityblocks: ParityData,
-        datablocks: Data,
-    ) -> Self {
-        debug_assert!(n <= BitArray::<U>::ZERO.len());
-        assert!(blocksize <= MAX_BLOCKSIZE);
-        Reconstructor {
-            n,
-            l: 0,
-            blocksize,
+    /// Deconstruct the objects to its component parts.
+    ///
+    /// If you're in the middle of operations, you can do this and later continue with [ReconstructorData::hydrate].
+    ///
+    /// Note, if you don't need access to the storage structs, it is also
+    /// correct to just drop the reconstructor.
+    pub fn desiccate(self) -> (Parity, Matrix, ParityData, Data) {
+        let Self {
             parity,
             matrix,
             parityblocks,
             datablocks,
-            done: BitArray::ZERO,
-            used: BitArray::ZERO,
-        }
-    }
+            ..
+        } = self;
 
-    /// Create a new reconstructor, continuing from a previous run.
-    /// The storage is assumed to be in the same state as before.
-    pub fn new_from_previous_run(
-        data: ReconstructorData<U, V>,
-        parity: Parity,
-        matrix: Matrix,
-        parityblocks: ParityData,
-        datablocks: Data,
-    ) -> Self {
-        assert!(data.blocksize <= MAX_BLOCKSIZE);
-        Reconstructor {
-            n: data.n,
-            l: data.l,
-            blocksize: data.blocksize,
-            parity,
-            matrix,
-            parityblocks,
-            datablocks,
-            done: data.done,
-            used: data.used,
-        }
+        (parity, matrix, parityblocks, datablocks)
     }
 
     // Do the preprocessing needed to start handling parity blocks
     // This is called once the first parity block is received
     fn init_stage2(&mut self) {
-        debug_assert_eq!(self.l, 0);
+        debug_assert_eq!(self.inner.l, 0);
 
-        self.l = self.done.iter().take(self.n).filter(|v| !**v).count();
+        self.inner.l = self
+            .inner
+            .done
+            .iter()
+            .take(self.inner.n)
+            .filter(|v| !**v)
+            .count();
     }
 
     // Should we have sufficient data? Note, this does not tell
     // itself if final processing has already been done. That needs
     // to be done on the first block after which this is true.
     fn is_complete(&self) -> bool {
-        (self.l == 0 && !self.done.iter().take(self.n).any(|v| !*v))
-            || (self.l != 0 && !self.used.iter().take(self.l).any(|v| !*v))
+        (self.inner.l == 0 && !self.inner.done.iter().take(self.inner.n).any(|v| !*v))
+            || (self.inner.l != 0 && !self.inner.used.iter().take(self.inner.l).any(|v| !*v))
     }
 
     // Handle a data blcok during stage 1
@@ -266,12 +285,12 @@ impl<
         index: usize,
         data: &[u8],
     ) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
-        debug_assert!(self.n > index);
-        debug_assert_eq!(self.l, 0);
-        assert_eq!(data.len(), self.blocksize);
+        debug_assert!(self.inner.n > index);
+        debug_assert_eq!(self.inner.l, 0);
+        assert_eq!(data.len(), self.inner.blocksize);
 
-        if !self.done[index] {
-            self.done.set(index, true);
+        if !self.inner.done[index] {
+            self.inner.done.set(index, true);
             self.datablocks
                 .store(index, data)
                 .await
@@ -287,8 +306,8 @@ impl<
         index: usize,
         data: &[u8],
     ) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
-        debug_assert_ne!(self.l, 0);
-        assert_eq!(data.len(), self.blocksize);
+        debug_assert_ne!(self.inner.l, 0);
+        assert_eq!(data.len(), self.inner.blocksize);
         let row = self.parity.row(index);
 
         let mut data_buf = [0u8; MAX_BLOCKSIZE];
@@ -299,7 +318,12 @@ impl<
         let tmp = &mut tmp_buf[..data.len()];
 
         // remove parity from already received datablocks.
-        for (i, (rowel, have_data)) in row.iter().zip(self.done.iter()).enumerate().take(self.n) {
+        for (i, (rowel, have_data)) in row
+            .iter()
+            .zip(self.inner.done.iter())
+            .enumerate()
+            .take(self.inner.n)
+        {
             if *rowel && *have_data {
                 self.datablocks
                     .get(i, tmp)
@@ -314,21 +338,21 @@ impl<
         // Construct reduced matrix row
         let mut reducedrow: BitArray<V> = BitArray::ZERO;
         let mut j = 0;
-        for (rowel, have_data) in row.iter().zip(self.done.iter()).take(self.n) {
+        for (rowel, have_data) in row.iter().zip(self.inner.done.iter()).take(self.inner.n) {
             if !*have_data {
                 reducedrow.set(j, *rowel);
                 j += 1;
             }
         }
-        debug_assert_eq!(j, self.l);
+        debug_assert_eq!(j, self.inner.l);
 
         // not strictly neccessary, but catches incorrect references to row below
         drop(row);
 
         // Reduce further to upper triangular form, and store
-        let mut working_head = self.l - 1;
+        let mut working_head = self.inner.l - 1;
         loop {
-            if reducedrow[working_head] && self.used[working_head] {
+            if reducedrow[working_head] && self.inner.used[working_head] {
                 // eliminate
                 self.parityblocks
                     .get(working_head, tmp)
@@ -344,15 +368,17 @@ impl<
                     .map_err(Error::MatrixStorageError)?;
             } else if reducedrow[working_head] {
                 // new row, store it
-                self.matrix
-                    .set_row(working_head, reducedrow)
-                    .await
-                    .map_err(Error::MatrixStorageError)?;
+                // we save the parity block first to ensure the matrix
+                // can be used as presence data for the parity blocks.
                 self.parityblocks
                     .store(working_head, data)
                     .await
                     .map_err(Error::ParityStorageError)?;
-                self.used.set(working_head, true);
+                self.matrix
+                    .set_row(working_head, reducedrow)
+                    .await
+                    .map_err(Error::MatrixStorageError)?;
+                self.inner.used.set(working_head, true);
                 break;
             }
 
@@ -368,9 +394,9 @@ impl<
 
     // Convert a reduced index to an index in the full data array.
     fn reduced_to_full(&self, mut index: usize) -> usize {
-        debug_assert!(index < self.l);
+        debug_assert!(index < self.inner.l);
 
-        for (i, have_data) in self.done.iter().enumerate().take(self.n) {
+        for (i, have_data) in self.inner.done.iter().enumerate().take(self.inner.n) {
             if !*have_data {
                 if index == 0 {
                     return i;
@@ -386,11 +412,11 @@ impl<
     // Reconstruct the final data blocks from parity.
     async fn finish(&mut self) -> Result<(), Error<Matrix::Error, ParityData::Error, Data::Error>> {
         let mut output_buf = [0u8; MAX_BLOCKSIZE];
-        let output = &mut output_buf[..self.blocksize];
+        let output = &mut output_buf[..self.inner.blocksize];
         let mut other_buf = [0u8; MAX_BLOCKSIZE];
-        let other = &mut other_buf[..self.blocksize];
+        let other = &mut other_buf[..self.inner.blocksize];
 
-        for i in 0..self.l {
+        for i in 0..self.inner.l {
             self.parityblocks
                 .get(i, output)
                 .await
@@ -427,21 +453,21 @@ impl<
         index: usize,
         data: &[u8],
     ) -> Result<BlockResult, Error<Matrix::Error, ParityData::Error, Data::Error>> {
-        assert_eq!(data.len(), self.blocksize);
+        assert_eq!(data.len(), self.inner.blocksize);
         if self.is_complete() {
-            return Ok(BlockResult::Done(self.n * self.blocksize));
+            return Ok(BlockResult::Done(self.inner.n * self.inner.blocksize));
         }
 
-        if index >= self.n && self.l == 0 {
+        if index >= self.inner.n && self.inner.l == 0 {
             self.init_stage2();
 
             let max_l = self.matrix.num_rows();
             debug_assert!(max_l <= BitArray::<V>::ZERO.len());
 
-            if BitArray::<V>::ZERO.len() < self.l || max_l < self.l {
+            if BitArray::<V>::ZERO.len() < self.inner.l || max_l < self.inner.l {
                 // Given this value of l, we would
                 // overflow the matrix rows, abort.
-                self.l = 0;
+                self.inner.l = 0;
                 return Ok(BlockResult::TooManyMissing);
             }
         }
@@ -449,10 +475,10 @@ impl<
         // Self.l indicates in which stage we are
         // l==0 => stage 1 (just data blocks)
         // l>0 => stage 2 (processing parity)
-        if self.l == 0 {
+        if self.inner.l == 0 {
             self.handle_data_block(index, data).await?;
             if self.is_complete() {
-                Ok(BlockResult::Done(self.n * self.blocksize))
+                Ok(BlockResult::Done(self.inner.n * self.inner.blocksize))
             } else {
                 Ok(BlockResult::NeedMore)
             }
@@ -463,42 +489,11 @@ impl<
                 // Ensure we actually produce the
                 // final data blocks.
                 self.finish().await?;
-                Ok(BlockResult::Done(self.n * self.blocksize))
+                Ok(BlockResult::Done(self.inner.n * self.inner.blocksize))
             } else {
                 Ok(BlockResult::NeedMore)
             }
         }
-    }
-
-    /// Deconstruct the objects to its component parts.
-    ///
-    /// If you're in the middle of operations, you can do this and later continue with [Self::new_from_previous_run].
-    pub fn free(self) -> (ReconstructorData<U, V>, Parity, Matrix, ParityData, Data) {
-        let Self {
-            n,
-            l,
-            blocksize,
-            parity,
-            matrix,
-            parityblocks,
-            datablocks,
-            done,
-            used,
-        } = self;
-
-        (
-            ReconstructorData {
-                n,
-                l,
-                blocksize,
-                done,
-                used,
-            },
-            parity,
-            matrix,
-            parityblocks,
-            datablocks,
-        )
     }
 }
 
@@ -615,9 +610,8 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn simple_reconstruction_test() {
-        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
-            4,
-            1,
+        let mut recdata = ReconstructorData::new(4, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 8, [u8; 1], [u8; 1]> = recdata.hydrate(
             TestParity::<4>,
             TestMatrixStorage::new(2),
             BlockStorage::<1>::new(2),
@@ -635,9 +629,8 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn nontrivial_relation() {
-        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
-            4,
-            1,
+        let mut recdata = ReconstructorData::new(4, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 8, [u8; 1], [u8; 1]> = recdata.hydrate(
             TestParity::<4>,
             TestMatrixStorage::new(3),
             BlockStorage::<1>::new(3),
@@ -655,9 +648,8 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn no_parity_needed() {
-        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
-            4,
-            1,
+        let mut recdata = ReconstructorData::new(4, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 8, [u8; 1], [u8; 1]> = recdata.hydrate(
             TestParity::<4>,
             TestMatrixStorage::new(0),
             BlockStorage::<1>::new(0),
@@ -675,9 +667,8 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn repeats_are_ok() {
-        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
-            4,
-            1,
+        let mut recdata = ReconstructorData::new(4, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 8, [u8; 1], [u8; 1]> = recdata.hydrate(
             TestParity::<4>,
             TestMatrixStorage::new(0),
             BlockStorage::<1>::new(0),
@@ -699,9 +690,8 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn too_many_missing() {
-        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 2], [u8; 1]>::new(
-            16,
-            1,
+        let mut recdata = ReconstructorData::new(16, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 8, [u8; 2], [u8; 2]> = recdata.hydrate(
             TestParity::<16>,
             TestMatrixStorage::new(8),
             BlockStorage::<1>::new(8),
@@ -749,9 +739,8 @@ pub(crate) mod tests {
 
     #[futures_test::test]
     async fn out_of_order() {
-        let mut rec = Reconstructor::<_, _, _, _, 8, [u8; 1], [u8; 1]>::new(
-            4,
-            1,
+        let mut recdata = ReconstructorData::new(4, 1);
+        let mut rec: Reconstructor<'_, _, _, _, _, 8, [u8; 1], [u8; 1]> = recdata.hydrate(
             TestParity::<4>,
             TestMatrixStorage::new(3),
             BlockStorage::<1>::new(3),

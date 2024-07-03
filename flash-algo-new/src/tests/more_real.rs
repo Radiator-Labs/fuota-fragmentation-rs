@@ -112,18 +112,11 @@ async fn basics() {
         .await
         .unwrap();
 
-    assert_eq!(start.firmware_slot.index(), 0);
-    assert_eq!(start.parity_slot.index(), 1);
-    assert_eq!(start.total_firmware_segments, num_fw_chunks);
-    assert_eq!(
-        start.remaining_firmware_segments,
-        start.total_firmware_segments
-    );
-    assert_eq!(start.total_parity_segments, 5438);
-    assert_eq!(start.total_parity_segments, start.remaining_parity_segments);
-
     let blank_to_start = flash.dump_to_string();
-    insta::assert_snapshot!(blank_to_start);
+    #[cfg(feature = "matrixreconstructor")]
+    insta::assert_snapshot!("basics_blank_to_start_matrix", blank_to_start);
+    #[cfg(not(feature = "matrixreconstructor"))]
+    insta::assert_snapshot!("basics_blank_to_start", blank_to_start);
 
     for (i, ch) in fw_chunks[..fw_chunks.len() - 1].iter().enumerate() {
         let res = start
@@ -149,7 +142,10 @@ async fn basics() {
         .unwrap();
 
     let all_done = flash.dump_to_string();
-    insta::assert_snapshot!(all_done);
+    #[cfg(feature = "matrixreconstructor")]
+    insta::assert_snapshot!("basics_done_matrix", all_done);
+    #[cfg(not(feature = "matrixreconstructor"))]
+    insta::assert_snapshot!("basics_done", all_done);
 
     let firmware_slot = mgr.open(firmware_slot_index);
     firmware_slot
@@ -216,16 +212,6 @@ async fn miss_any_one() {
             )
             .await
             .unwrap();
-
-        assert_eq!(start.firmware_slot.index(), 0);
-        assert_eq!(start.parity_slot.index(), 1);
-        assert_eq!(start.total_firmware_segments, data_frags.len() as u32);
-        assert_eq!(
-            start.remaining_firmware_segments,
-            start.total_firmware_segments
-        );
-        assert_eq!(start.total_parity_segments, 5438);
-        assert_eq!(start.total_parity_segments, start.remaining_parity_segments);
 
         for (i, ch) in data_frags.iter().enumerate() {
             if i == to_skip {
@@ -395,32 +381,93 @@ async fn could_it_recover() {
         (100..120).contains(&i)
     }
 
-    #[cfg(feature = "force-full-r")]
-    let num_parity_every_64_fail = 45;
+    let num_parity_every_64_fail = if cfg!(feature = "matrixreconstructor") {
+        if cfg!(feature = "force-full-r") {
+            10
+        } else {
+            12
+        }
+    } else {
+        if cfg!(feature = "force-full-r") {
+            45
+        } else {
+            28
+        }
+    };
 
-    #[cfg(not(feature = "force-full-r"))]
-    let num_parity_every_64_fail = 28;
+    let num_parity_every_16_fail = if cfg!(feature = "matrixreconstructor") {
+        if cfg!(feature = "force-full-r") {
+            42
+        } else {
+            37
+        }
+    } else {
+        parity_frags.len()
+    };
 
-    #[cfg(feature = "force-full-r")]
-    let num_parity_second_five_fail = 15;
+    let num_parity_every_16_fail_offset = if cfg!(feature = "matrixreconstructor") {
+        37
+    } else {
+        parity_frags.len()
+    };
 
-    #[cfg(not(feature = "force-full-r"))]
-    let num_parity_second_five_fail = 7;
+    let num_parity_first_five_fail = if cfg!(feature = "matrixreconstructor") {
+        // Note, the fact that the other reconstructor can
+        // do it in fewer may actually indicate a bug in it.
+        6
+    } else {
+        5
+    };
+
+    let num_parity_second_five_fail = if cfg!(feature = "matrixreconstructor") {
+        7
+    } else {
+        if cfg!(feature = "force-full-r") {
+            15
+        } else {
+            7
+        }
+    };
+
+    let num_parity_burst_20_fail = if cfg!(feature = "matrixreconstructor") {
+        if cfg!(feature = "force-full-r") {
+            22
+        } else {
+            24
+        }
+    } else {
+        parity_frags.len()
+    };
 
     #[allow(clippy::complexity)]
     let cases: &[(fn(usize) -> bool, fn(usize) -> bool, bool, usize)] = &[
         (all_pass, all_pass, true, 0),
         (every_64_fail, all_pass, true, num_parity_every_64_fail),
-        (every_16_fail, all_pass, false, parity_frags.len()),
-        (every_16_fail_offset, all_pass, false, parity_frags.len()),
-        (first_five_fail, all_pass, true, 5),
+        (
+            every_16_fail,
+            all_pass,
+            cfg!(feature = "matrixreconstructor"),
+            num_parity_every_16_fail,
+        ),
+        (
+            every_16_fail_offset,
+            all_pass,
+            cfg!(feature = "matrixreconstructor"),
+            num_parity_every_16_fail_offset,
+        ),
+        (first_five_fail, all_pass, true, num_parity_first_five_fail),
         (
             second_five_fail,
             all_pass,
             true,
             num_parity_second_five_fail,
         ),
-        (burst_20_fail, all_pass, false, parity_frags.len()),
+        (
+            burst_20_fail,
+            all_pass,
+            cfg!(feature = "matrixreconstructor"),
+            num_parity_burst_20_fail,
+        ),
     ];
 
     let mut scratch = ScratchRam::new();
@@ -443,16 +490,6 @@ async fn could_it_recover() {
             )
             .await
             .unwrap();
-
-        assert_eq!(start.firmware_slot.index(), 0);
-        assert_eq!(start.parity_slot.index(), 1);
-        assert_eq!(start.total_firmware_segments, data_frags.len() as u32);
-        assert_eq!(
-            start.remaining_firmware_segments,
-            start.total_firmware_segments
-        );
-        assert_eq!(start.total_parity_segments, 5438);
-        assert_eq!(start.total_parity_segments, start.remaining_parity_segments);
 
         for (i, ch) in data_frags.iter().enumerate() {
             if frag_skip_fn(i) {

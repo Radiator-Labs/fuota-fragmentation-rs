@@ -6,7 +6,7 @@ use bitvec::{array::BitArray, order::Lsb0, slice::BitSlice, view::BitViewSized};
 use libfuzzer_sys::fuzz_target;
 use parity_reconstruct::{
     lfdbt::LfdbtParity, BlockResult, DataStorage, MatrixStorage, ParityMatrix, ParityStorage,
-    Reconstructor,
+    Reconstructor, ReconstructorData,
 };
 
 struct TestMatrixStorage<V: BitViewSized> {
@@ -36,6 +36,10 @@ impl<V: BitViewSized> MatrixStorage<V> for TestMatrixStorage<V> {
     async fn row(&mut self, m: usize) -> Result<BitArray<V>, Self::Error> {
         Ok(self.data[m].clone())
     }
+
+    fn num_rows(&self) -> usize {
+        self.data.len()
+    }
 }
 
 struct BlockStorage<const BLOCKSIZE: usize> {
@@ -54,37 +58,39 @@ impl<const BLOCKSIZE: usize> BlockStorage<BLOCKSIZE> {
 
 struct WrappedBlockStorage<const BLOCKSIZE: usize>(Rc<RefCell<BlockStorage<BLOCKSIZE>>>);
 
-impl<const BLOCKSIZE: usize> DataStorage<BLOCKSIZE> for WrappedBlockStorage<BLOCKSIZE> {
+impl<const BLOCKSIZE: usize> DataStorage for WrappedBlockStorage<BLOCKSIZE> {
     type Error = core::convert::Infallible;
 
-    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error> {
         let mut this = self.0.borrow_mut();
         assert!(!this.used[m]);
-        this.data[m] = data;
+        this.data[m] = data.try_into().unwrap();
         this.used[m] = true;
         Ok(())
     }
 
-    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+    async fn get(&mut self, m: usize, buf: &mut [u8]) -> Result<(), Self::Error> {
         let this = self.0.borrow();
         assert!(this.used[m]);
-        Ok(this.data[m])
+        buf.copy_from_slice(&this.data[m]);
+        Ok(())
     }
 }
 
-impl<const BLOCKSIZE: usize> ParityStorage<BLOCKSIZE> for BlockStorage<BLOCKSIZE> {
+impl<const BLOCKSIZE: usize> ParityStorage for BlockStorage<BLOCKSIZE> {
     type Error = core::convert::Infallible;
 
-    async fn store(&mut self, m: usize, data: [u8; BLOCKSIZE]) -> Result<(), Self::Error> {
+    async fn store(&mut self, m: usize, data: &[u8]) -> Result<(), Self::Error> {
         assert!(!self.used[m]);
-        self.data[m] = data;
+        self.data[m] = data.try_into().unwrap();
         self.used[m] = true;
         Ok(())
     }
 
-    async fn get(&mut self, m: usize) -> Result<[u8; BLOCKSIZE], Self::Error> {
+    async fn get(&mut self, m: usize, buf: &mut [u8]) -> Result<(), Self::Error> {
         assert!(self.used[m]);
-        Ok(self.data[m])
+        buf.copy_from_slice(&self.data[m]);
+        Ok(())
     }
 }
 
@@ -102,19 +108,11 @@ fuzz_target!(|testcase: (Vec<[u8; 4]>, &[u8])| {
 
     let matrix = LfdbtParity::new(data.len());
     let datastore = Rc::new(RefCell::new(BlockStorage::new(data.len())));
-    let mut reconstructor = Reconstructor::<
-        _,
-        _,
-        _,
-        _,
-        4,
-        [usize; 1024 / size_of::<usize>()],
-        [usize; 1024 / size_of::<usize>()],
-    >::new(
-        data.len(),
+    let mut recdata = ReconstructorData::<[usize; 1024 / size_of::<usize>()],[usize; 1024 / size_of::<usize>()]>::new(data.len(), 4);
+    let mut reconstructor: Reconstructor<_, _, _, _, 4, _, _> = recdata.hydrate(
         LfdbtParity::new(data.len()),
         TestMatrixStorage::new(data.len()),
-        BlockStorage::new(data.len()),
+        BlockStorage::<4>::new(data.len()),
         WrappedBlockStorage(datastore.clone()),
     );
 
@@ -137,7 +135,7 @@ fuzz_target!(|testcase: (Vec<[u8; 4]>, &[u8])| {
                 }
             }
 
-            match futures::executor::block_on(reconstructor.handle_block(i, block)).unwrap() {
+            match futures::executor::block_on(reconstructor.handle_block(i, &block)).unwrap() {
                 BlockResult::NeedMore => {}
                 BlockResult::TooManyMissing => panic!("Should always fit"),
                 BlockResult::Done(_) => {

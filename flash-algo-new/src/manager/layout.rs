@@ -670,6 +670,9 @@ pub mod test {
     fn size_checker() {
         // Scratch RAM last updated: 2024-01-02
         // assert_eq!(core::mem::size_of::<ScratchRam>(), 1_436); // BEFORE 2K -> 16K
+        #[cfg(feature = "matrixreconstructor")]
+        assert_eq!(core::mem::size_of::<ScratchRam>(), 284);
+        #[cfg(not(feature = "matrixreconstructor"))]
         assert_eq!(core::mem::size_of::<ScratchRam>(), 6_812); // AFTER  2K -> 16K
 
         // Will the SlotHeader fit in the Header Size?

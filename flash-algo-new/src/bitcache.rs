@@ -17,7 +17,7 @@ pub struct OutOfRange {
 ///
 /// A bit-packed array of bits, useful for capturing LDPC matrix rows
 pub(crate) struct BitCache {
-    buf: BitArray<[u8; BC_SIZE]>,
+    pub(crate) buf: BitArray<[u8; BC_SIZE]>,
 }
 
 #[derive(Debug, PartialEq)]
