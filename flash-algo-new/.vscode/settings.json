@@ -1,0 +1,10 @@
+{
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.allTargets": true,
+    // "rust-analyzer.check.extraArgs": [
+    //     "--target",
+    //     "thumbv7em-none-eabi"
+    // ],
+    "rust-analyzer.imports.preferNoStd": true,
+    "rust-analyzer.showUnlinkedFileNotification": false,
+}
