@@ -1,5 +1,6 @@
 use core::num::NonZeroU32;
 
+#[cfg(not(feature = "matrixreconstructor"))]
 use bitvec::array::BitArray;
 use layout::{
     segment_status_table::{MAX_SEGMENTS, MAX_SEGMENT_SIZE},
@@ -7,10 +8,10 @@ use layout::{
     WriteIntStatus, HEADER_SIZE,
 };
 
-use crate::{
-    bitcache::BitCache,
-    spi_flash::{SpiFlash, SpiFlashError},
-};
+use crate::spi_flash::{SpiFlash, SpiFlashError};
+
+#[cfg(not(feature = "matrixreconstructor"))]
+use crate::bitcache::BitCache;
 
 mod firmware;
 mod fs;
@@ -40,20 +41,25 @@ pub(crate) use fs::indexed_headers;
 #[allow(clippy::exhaustive_structs)]
 pub struct ScratchRam {
     /// One array to hold the list of all received firmware segments
+    #[cfg(not(feature = "matrixreconstructor"))]
     pub(crate) received_firmware_scratch: BitCache,
     /// One array to hold the list of all received parity segments
+    #[cfg(not(feature = "matrixreconstructor"))]
     pub(crate) received_parity_scratch: BitCache,
     /// One array to hold a single "does this parity segment correspond
     ///   to a given data segment" row.
+    #[cfg(not(feature = "matrixreconstructor"))]
     pub(crate) parity_mask_scratch: BitArray<[u8; MAX_SEGMENTS / 8]>,
 
     /// An array to page-in parity data when loading a [`BitCache`]
     /// from flash data
+    #[cfg(not(feature = "matrixreconstructor"))]
     pub(crate) parity_temp_page: [u8; Self::PARITY_TEMP_LEN],
 
     /// A single read segment
     pub(crate) firmware_rd_scratch: [u8; MAX_SEGMENT_SIZE],
     /// A single write segment
+    #[cfg(not(feature = "matrixreconstructor"))]
     pub(crate) firmware_wr_scratch: [u8; MAX_SEGMENT_SIZE],
 
     /// For one header
@@ -68,18 +74,24 @@ impl Default for ScratchRam {
 
 impl ScratchRam {
     /// Number of bytes per stride when loading [`BitCaches`] from Flash
+    #[cfg(not(feature = "matrixreconstructor"))]
     const PARITY_TEMP_LEN: usize = 128;
 
     /// Create a new, empty (zero-filled) `ScratchRam`
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            #[cfg(not(feature = "matrixreconstructor"))]
             received_firmware_scratch: BitCache::new(),
+            #[cfg(not(feature = "matrixreconstructor"))]
             received_parity_scratch: BitCache::new(),
+            #[cfg(not(feature = "matrixreconstructor"))]
             parity_mask_scratch: BitArray::ZERO,
             firmware_rd_scratch: [0_u8; MAX_SEGMENT_SIZE],
+            #[cfg(not(feature = "matrixreconstructor"))]
             firmware_wr_scratch: [0_u8; MAX_SEGMENT_SIZE],
             header_scratch: [0_u8; SlotHeader::SIZE],
+            #[cfg(not(feature = "matrixreconstructor"))]
             parity_temp_page: [0_u8; Self::PARITY_TEMP_LEN],
         }
     }

@@ -11,6 +11,9 @@ use crate::{
     spi_flash::{SpiFlash, SpiFlashError},
 };
 
+#[cfg(feature = "matrixreconstructor")]
+use crate::layout::HEADER_SIZE;
+
 use super::{
     layout::{
         segment_status_table::{DATA_WRITTEN, MAX_SEGMENTS},
@@ -205,6 +208,7 @@ impl Slot {
         Ok(())
     }
 
+    #[cfg(not(feature = "matrixreconstructor"))]
     pub(crate) async fn segment_status<T: SpiFlash>(
         &self,
         idx: usize,
@@ -392,6 +396,40 @@ impl Slot {
             .read_to(self.idx * self.size + offset, &mut buf[..write_size])
             .await?;
         Ok(write_size)
+    }
+
+    #[cfg(feature = "matrixreconstructor")]
+    pub(crate) async fn write_raw<T: SpiFlash>(
+        &mut self,
+        offset: usize,
+        buf: &[u8],
+        flash: &mut T,
+    ) -> Result<usize, SpiFlashError<T::Error>> {
+        if self.size.saturating_sub(HEADER_SIZE) < offset.saturating_add(buf.len()) {
+            return Err(SpiFlashError::OutOfBounds);
+        }
+
+        flash
+            .write_from(self.idx * self.size + HEADER_SIZE + offset, buf)
+            .await?;
+        Ok(buf.len())
+    }
+
+    #[cfg(feature = "matrixreconstructor")]
+    pub(crate) async fn read_raw<T: SpiFlash>(
+        &mut self,
+        offset: usize,
+        buf: &mut [u8],
+        flash: &mut T,
+    ) -> Result<usize, SpiFlashError<T::Error>> {
+        if self.size.saturating_sub(HEADER_SIZE) < offset.saturating_add(buf.len()) {
+            return Err(SpiFlashError::OutOfBounds);
+        }
+
+        flash
+            .read_to(self.idx * self.size + HEADER_SIZE + offset, buf)
+            .await?;
+        Ok(buf.len())
     }
 
     pub(crate) async fn load_status_array<'a, T: SpiFlash>(
