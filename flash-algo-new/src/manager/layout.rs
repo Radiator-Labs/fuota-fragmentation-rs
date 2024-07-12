@@ -243,7 +243,7 @@ pub(crate) fn try_take_n(bytes: &[u8], n: usize) -> Option<(&[u8], &[u8])> {
 /// Can report an error if flash write operation fails
 #[inline]
 #[must_use]
-pub(crate) fn try_take_u32(bytes: &[u8]) -> Option<(u32, &[u8])> {
+pub fn try_take_u32(bytes: &[u8]) -> Option<(u32, &[u8])> {
     let (now, later) = try_take_n(bytes, 4)?;
     let mut u32_bytes = [0_u8; 4];
     u32_bytes.copy_from_slice(now);
@@ -272,7 +272,7 @@ pub(crate) fn try_write_n<'a>(
 /// # Errors
 /// Can report an error if flash write operation fails
 #[inline]
-pub(crate) fn try_write_u32(val: u32, buf: &mut [u8]) -> Result<&mut [u8], FlashReprError> {
+pub fn try_write_u32(val: u32, buf: &mut [u8]) -> Result<&mut [u8], FlashReprError> {
     let bytes = val.to_le_bytes();
     try_write_n(&bytes, buf)
 }
