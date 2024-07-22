@@ -50,7 +50,7 @@ impl<const N: usize> SlotManager<N> {
     }
 
     /// Mark any in-progress firmware writes as Aborted. Used for error case recovery.
-    async fn cancel_all_ext_pending<T: SpiFlash>(
+    pub async fn cancel_all_ext_pending<T: SpiFlash>(
         &mut self,
         flash: &mut T,
         scratch: &mut ScratchRam,
