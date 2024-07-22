@@ -1,13 +1,14 @@
-use flash_algo::manager::{
-    ActiveStatus, AppBootStatus, ScratchRam, SlotManager, WriteSegmentOutcome,
+use flash_algo_new::{
+    manager::{ScratchRam, SlotManager},
+    testutils::heap_flash::Flash,
+    update::{SegmentOutcome, Updater},
 };
-use flash_algo::testutils::heap_flash::Flash;
 
 pub(crate) struct TestFuota {
     flash: Flash,
     manager: SlotManager<4>,
     scratch: ScratchRam,
-    opt_session: Option<ActiveStatus>,
+    opt_session: Option<Updater>,
 }
 impl TestFuota {
     pub(crate) async fn new() -> Self {
@@ -21,16 +22,13 @@ impl TestFuota {
         test_fuota.opt_session = test_fuota.initialize().await;
         test_fuota
     }
-    async fn initialize(&mut self) -> Option<ActiveStatus> {
+    async fn initialize(&mut self) -> Option<Updater> {
         match self
             .manager
-            .app_boot_status(&mut self.flash, &mut self.scratch)
+            .try_recover(&mut self.flash, &mut self.scratch)
             .await
         {
-            Ok(initial_fuota_status) => match initial_fuota_status {
-                AppBootStatus::Idle => None,
-                AppBootStatus::InProgress(session) => Some(session),
-            },
+            Ok(opt_updater) => opt_updater,
             Err(e) => panic!("app_boot_status error {e:?}",),
         }
     }
@@ -39,7 +37,7 @@ impl TestFuota {
         self.frag_session_delete().await;
         self.opt_session = match self
             .manager
-            .start(
+            .start_update(
                 &mut self.flash,
                 &mut self.scratch,
                 fragment_size,
@@ -56,7 +54,7 @@ impl TestFuota {
         self.opt_session = None;
         if let Err(e) = self
             .manager
-            .cancel_all_ext_pending_from_scratch(&mut self.flash, &mut self.scratch)
+            .cancel_all_ext_pending(&mut self.flash, &mut self.scratch)
             .await
         {
             panic!("FragSessionDeleteRequest error {e:?}");
@@ -67,21 +65,12 @@ impl TestFuota {
         match self.opt_session {
             Some(ref mut session) => {
                 match session
-                    .write_segment(&mut self.flash, &mut self.scratch, index as u32, fragment)
+                    .handle_segment(&mut self.flash, &mut self.scratch, index as u32, fragment)
                     .await
                 {
                     Ok(res) => match res {
-                        WriteSegmentOutcome::Consumed => FuotaResponse::Incomplete,
-                        WriteSegmentOutcome::ConsumedMaybeParity => {
-                            act_on_consumed_maybe_parity(
-                                session,
-                                &mut self.flash,
-                                &mut self.scratch,
-                                index,
-                            )
-                            .await
-                        }
-                        WriteSegmentOutcome::FirmwareComplete => {
+                        SegmentOutcome::Consumed => FuotaResponse::Incomplete,
+                        SegmentOutcome::FirmwareComplete => {
                             act_on_firmware_complete(
                                 session,
                                 &mut self.flash,
@@ -103,31 +92,9 @@ impl TestFuota {
     }
 }
 
-async fn act_on_consumed_maybe_parity(
-    session: &mut ActiveStatus,
-    flash: &mut Flash,
-    scratch: &mut ScratchRam,
-    index: usize,
-) -> FuotaResponse {
-    'repair: loop {
-        let rep_res = session.repair_step(flash, scratch).await;
-        match rep_res {
-            Ok(Some(_n)) => (),
-            Ok(None) => break 'repair,
-            Err(_) => panic!("FUOTA write error"),
-        }
-    }
-    // We might be complete if a repair just completed
-    if session.is_complete() {
-        act_on_firmware_complete(session, flash, scratch, index).await
-    } else {
-        FuotaResponse::Incomplete
-    }
-}
-
 #[allow(clippy::used_underscore_binding)]
 async fn act_on_firmware_complete(
-    session: &mut ActiveStatus,
+    session: &mut Updater,
     flash: &mut Flash,
     scratch: &mut ScratchRam,
     index: usize,

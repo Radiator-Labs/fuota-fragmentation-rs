@@ -1,8 +1,8 @@
 use bitvec::array::BitArray;
 use crc::{Crc, CRC_32_CKSUM};
-use flash_algo::{
+use flash_algo_new::{
     fragmentation::get_parity_matrix_row,
-    protocol::{Crc32, FlashRepr, Signature},
+    layout::{Crc32, FlashRepr, Signature},
 };
 
 #[allow(clippy::exhaustive_structs)]
