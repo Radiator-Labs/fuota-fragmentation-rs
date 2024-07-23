@@ -62,14 +62,19 @@ impl TestFuota {
     }
 
     pub(crate) async fn insert_fragment(&mut self, index: usize, fragment: &[u8]) -> FuotaResponse {
-        match self.opt_session {
-            Some(ref mut session) => {
+        // Take the session since the session may stop after this
+        match self.opt_session.take() {
+            Some(mut session) => {
                 match session
                     .handle_segment(&mut self.flash, &mut self.scratch, index as u32, fragment)
                     .await
                 {
                     Ok(res) => match res {
-                        SegmentOutcome::Consumed => FuotaResponse::Incomplete,
+                        SegmentOutcome::Consumed => {
+                            // Session is still active, so put it back
+                            self.opt_session = Some(session);
+                            FuotaResponse::Incomplete
+                        }
                         SegmentOutcome::FirmwareComplete => {
                             act_on_firmware_complete(
                                 session,
@@ -94,7 +99,7 @@ impl TestFuota {
 
 #[allow(clippy::used_underscore_binding)]
 async fn act_on_firmware_complete(
-    session: &mut Updater,
+    session: Updater,
     flash: &mut Flash,
     scratch: &mut ScratchRam,
     index: usize,
