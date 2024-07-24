@@ -21,10 +21,15 @@ jobs:
         cargo install cargo-machete
         cargo build --release --no-default-features
         cargo build --release --features force-full-r
+        cargo build --release --features matrixreconstructor
         (cd flash-algo && cargo build --release --target thumbv7em-none-eabi --no-default-features)
         (cd flash-algo && cargo build --release --target thumbv7em-none-eabi --features force-full-r)
+        (cd flash-algo-new && cargo build --release --target thumbv7em-none-eabi --no-default-features)
+        (cd flash-algo-new && cargo build --release --target thumbv7em-none-eabi --features force-full-r)
+        (cd flash-algo-new && cargo build --release --target thumbv7em-none-eabi --features matrixreconstructor)
         cargo test --no-default-features
         cargo test --features force-full-r
+        cargo test --features matrixreconstructor
         cargo fmt --all -- --check
         cargo clippy
         cargo machete
