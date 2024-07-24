@@ -42,18 +42,27 @@ impl TestRun {
 
     pub(crate) fn summary(&self) -> TestRunSummary {
         let num_passed = self.cycles.iter().filter(|m| m.is_passed()).count();
+        let num_failed_incomplete = self
+            .cycles
+            .iter()
+            .filter(|m| m.is_failed_incomplete())
+            .count();
         let num_failed_crc = self.cycles.iter().filter(|m| m.is_failed_crc()).count();
         let num_failed_equality = self
             .cycles
             .iter()
             .filter(|m| m.is_failed_equality())
             .count();
-        let total = num_passed + num_failed_crc + num_failed_equality;
+        let total = num_passed + num_failed_incomplete + num_failed_crc + num_failed_equality;
         let num_passing_emits = self
             .cycles
             .iter()
             .fold(0, |acc, m| acc + m.num_sent_count());
-        assert!(total == self.cycle_count);
+        assert!(
+            total == self.cycle_count,
+            "total {total:?} cycle_count {:?}",
+            self.cycle_count
+        );
 
         let pass_percentage = (num_passed as f64 / total as f64) * 100.0;
         let average_passing_emit_count = num_passing_emits as f64 / total as f64;
@@ -68,6 +77,7 @@ impl TestRun {
             num_fragments: self.num_fragments,
             // seed: self.seed,
             num_passed,
+            num_failed_incomplete,
             num_failed_crc,
             num_failed_equality,
             pass_percentage,
@@ -87,6 +97,7 @@ pub(crate) struct TestRunSummary {
     num_fragments: usize,
     // seed: [u8; 32],
     num_passed: usize,
+    num_failed_incomplete: usize,
     num_failed_crc: usize,
     num_failed_equality: usize,
     pass_percentage: f64,
@@ -114,6 +125,13 @@ impl TestCycle {
             result: Result::FailedCrc,
         }
     }
+    pub(crate) fn failed_incomplete(omissions: &Omissions) -> Self {
+        Self {
+            num_skips_in_data: omissions.num_skips_in_data(),
+            num_skips: omissions.num_skips(),
+            result: Result::FailedIncomplete,
+        }
+    }
     pub(crate) fn is_passed(&self) -> bool {
         matches!(self.result, Result::Pass { final_index: _ })
     }
@@ -122,6 +140,9 @@ impl TestCycle {
     }
     pub(crate) fn is_failed_equality(&self) -> bool {
         self.result == Result::FailedEquality
+    }
+    pub(crate) fn is_failed_incomplete(&self) -> bool {
+        self.result == Result::FailedIncomplete
     }
     pub(crate) fn num_sent_count(&self) -> usize {
         if let Result::Pass { final_index } = self.result {
@@ -137,4 +158,5 @@ pub(crate) enum Result {
     Pass { final_index: usize },
     FailedCrc,
     FailedEquality,
+    FailedIncomplete,
 }

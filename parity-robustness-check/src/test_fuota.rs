@@ -1,5 +1,5 @@
 use flash_algo_new::{
-    manager::{ScratchRam, SlotManager},
+    manager::{ManagerError, ScratchRam, SlotManager},
     testutils::heap_flash::Flash,
     update::{SegmentOutcome, Updater},
 };
@@ -108,7 +108,19 @@ async fn act_on_firmware_complete(
         Ok(_slot) => FuotaResponse::Complete {
             last_fragment_index: index,
         },
-        Err(e) => panic!("check_and_mark_done error {e:?}"),
+        Err(e) => match e {
+            ManagerError::CheckFailNotDone
+            | ManagerError::CheckFailNotFirmware
+            | ManagerError::Fatal
+            | ManagerError::FlashRepr(_)
+            | ManagerError::SegmentCountMismatch
+            | ManagerError::SegmentSizeMismatch
+            | ManagerError::SegmentsTooLarge
+            | ManagerError::Spi(_)
+            | ManagerError::TooManySegments
+            | ManagerError::UnexpectedMissingHeader => panic!("check_and_mark_done error {e:?}"),
+            ManagerError::Crc32Mismatch => FuotaResponse::CrcError,
+        },
     }
 }
 
@@ -117,5 +129,6 @@ async fn act_on_firmware_complete(
 pub(crate) enum FuotaResponse {
     Incomplete,
     Complete { last_fragment_index: usize },
+    CrcError,
     // FuotaError,
 }

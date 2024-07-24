@@ -106,7 +106,8 @@ async fn perform_test_cycle(fragments: &Fragments, omissions: &Omissions) -> Tes
         .await;
     }
     match fuota_result {
-        FuotaResponse::Incomplete => TestCycle::failed_crc(omissions),
+        FuotaResponse::Incomplete => TestCycle::failed_incomplete(omissions),
+        FuotaResponse::CrcError => TestCycle::failed_crc(omissions),
         FuotaResponse::Complete {
             last_fragment_index,
         } => TestCycle::passed(last_fragment_index, omissions),
@@ -124,6 +125,7 @@ async fn insert_fragments(
         if omissions.emit(index) {
             match test_fuota.insert_fragment(index + 1, fragment).await {
                 FuotaResponse::Incomplete => (),
+                FuotaResponse::CrcError => return FuotaResponse::CrcError,
                 FuotaResponse::Complete {
                     last_fragment_index,
                 } => {
