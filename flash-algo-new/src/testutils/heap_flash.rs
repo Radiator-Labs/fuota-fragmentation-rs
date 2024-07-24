@@ -76,7 +76,7 @@ impl Flash {
     /// of `BYTES_PER_PAGE`, which is 256.
     ///
     /// ```rust
-    /// use flash_algo::testutils::heap_flash::Flash;
+    /// use flash_algo_new::testutils::heap_flash::Flash;
     ///
     /// // Create a 1MiB flash part with 64KiB blocks
     /// let flash = Flash::new(64 * 1024, 1024 * 1024);
@@ -119,8 +119,8 @@ impl Flash {
     /// This is intended for use with snapshot tests.
     ///
     /// ```rust
-    /// use flash_algo::testutils::heap_flash::Flash;
-    /// use flash_algo::spi_flash::SpiFlash;
+    /// use flash_algo_new::testutils::heap_flash::Flash;
+    /// use flash_algo_new::spi_flash::SpiFlash;
     ///
     /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
     /// // Create a 256B flash part with 256B blocks

@@ -13,7 +13,7 @@ use crate::manager::layout::segment_status_table::MAX_SEGMENTS;
 // permuted every time the function is called.
 //
 // ```rust
-// use flash_algo::fragmentation::fragmentation_prbs23;
+// use flash_algo_new::fragmentation::fragmentation_prbs23;
 //
 // // Start with an initial value, generate four numbers
 // let mut x = 1001;
