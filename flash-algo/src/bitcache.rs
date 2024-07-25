@@ -16,13 +16,13 @@ pub struct OutOfRange {
 /// Bitcache
 ///
 /// A bit-packed array of bits, useful for capturing LDPC matrix rows
-pub struct BitCache {
+pub(crate) struct BitCache {
     buf: BitArray<[u8; BC_SIZE]>,
 }
 
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
-pub enum FillError {
+pub(crate) enum FillError {
     OutOfRange,
     InvalidByte,
 }
@@ -103,7 +103,7 @@ impl BitCache {
 }
 
 #[derive(Clone)]
-pub struct BitIter<'a> {
+pub(crate) struct BitIter<'a> {
     bc: &'a BitCache,
     idx: usize,
 }
