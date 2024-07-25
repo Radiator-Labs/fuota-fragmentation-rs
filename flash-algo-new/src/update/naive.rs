@@ -407,7 +407,7 @@ impl Updater {
     #[must_use]
     pub fn received_firmware_segments(&self) -> u32 {
         if self.total_firmware_segments > self.remaining_firmware_segments {
-            self.session.total_firmware_segments - self.remaining_firmware_segments
+            self.total_firmware_segments - self.remaining_firmware_segments
         } else {
             0
         }
