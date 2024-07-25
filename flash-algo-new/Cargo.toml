@@ -3,7 +3,10 @@ name = "flash-algo-new"
 version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-authors = ["James Munns <james@onevariable.com>", "David Venhoek <david@tweedegolf.com>"]
+authors = [
+    "James Munns <james@onevariable.com>",
+    "David Venhoek <david@tweedegolf.com>",
+]
 readme = "README.md"
 description = "Flash algorithm for the Cozy Motherboard 2023."
 repository = "https://github.com/Radiator-Labs/cozyboard_2023/tree/master/shared-sw-fw/flash-algo"
@@ -28,9 +31,9 @@ defmt = ["dep:defmt"]
 
 [dependencies]
 crc = "3.2.1"
-defmt = { version = "0.3.8", optional = true }
+defmt = { version = "=0.3.6", optional = true }
 bitvec = { version = "1.0.1", default-features = false, features = ["atomic"] }
-parity-reconstruct = { path = "../parity-reconstruct" , default-features = false, optional = true }
+parity-reconstruct = { path = "../parity-reconstruct", default-features = false, optional = true }
 
 [dev-dependencies]
 insta = "1.39.0"
