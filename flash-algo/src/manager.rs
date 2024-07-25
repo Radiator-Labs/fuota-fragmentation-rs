@@ -1115,6 +1115,25 @@ impl ActiveStatus {
 
         Ok(self.firmware_slot_idx)
     }
+
+    #[must_use]
+    pub fn total_firmware_segments(&self) -> u32 {
+        self.total_firmware_segments
+    }
+
+    #[must_use]
+    pub fn remaining_firmware_segments(&self) -> u32 {
+        self.remaining_firmware_segments
+    }
+
+    #[must_use]
+    pub fn received_firmware_segments(&self) -> u32 {
+        if self.total_firmware_segments > self.remaining_firmware_segments {
+            self.total_firmware_segments - self.remaining_firmware_segments
+        } else {
+            0
+        }
+    }
 }
 
 /// Fill the given [`BitCache`], from the given flash address
