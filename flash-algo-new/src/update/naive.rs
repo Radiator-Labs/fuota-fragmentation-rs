@@ -393,6 +393,25 @@ impl Updater {
 
         Ok(self.firmware_slot.index())
     }
+
+    #[must_use]
+    pub fn total_firmware_segments(&self) -> u32 {
+        self.total_firmware_segments
+    }
+
+    #[must_use]
+    pub fn remaining_firmware_segments(&self) -> u32 {
+        self.remaining_firmware_segments
+    }
+
+    #[must_use]
+    pub fn received_firmware_segments(&self) -> u32 {
+        if self.total_firmware_segments > self.remaining_firmware_segments {
+            self.session.total_firmware_segments - self.remaining_firmware_segments
+        } else {
+            0
+        }
+    }
 }
 
 impl<const N: usize> SlotManager<N> {
