@@ -526,7 +526,7 @@ pub enum TotalStatus {
 }
 
 #[must_use]
-pub(crate) fn total_status(hdr: &SlotHeader) -> TotalStatus {
+pub fn total_status(hdr: &SlotHeader) -> TotalStatus {
     let slot_id_valid = hdr.seq_no.0 != u32::MAX;
 
     #[allow(clippy::pattern_type_mismatch)] // TODO: eliminate this allow

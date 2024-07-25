@@ -1320,7 +1320,7 @@ pub struct Validated {
 ///
 /// # Errors
 /// Reports if SPI Flash activities fail
-async fn read_header_from_slot<T: SpiFlash>(
+pub async fn read_header_from_slot<T: SpiFlash>(
     flash: &mut T,
     scratch: &mut ScratchRam,
     slot_start: usize,
@@ -1335,7 +1335,7 @@ async fn read_header_from_slot<T: SpiFlash>(
 ///
 /// # Errors
 /// Reports if SPI Flash activities fail
-pub(crate) async fn check_crc_from_index<T: SpiFlash>(
+pub async fn check_crc_from_index<T: SpiFlash>(
     flash: &mut T,
     scratch: &mut ScratchRam,
     segment_size_option: Option<usize>,

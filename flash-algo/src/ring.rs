@@ -11,7 +11,7 @@ use crate::{
 
 #[allow(clippy::exhaustive_structs)]
 #[derive(Debug)]
-pub(crate) struct IndexedHeader {
+pub struct IndexedHeader {
     pub idx: usize,
     pub hdr: Option<SlotHeader>,
 }
@@ -53,7 +53,7 @@ pub(crate) fn get_next_seq_no(sli: &[IndexedHeader]) -> u32 {
 ///
 /// # Panics
 /// Panics if hdrs is empty. TODO: eliminate this panic
-pub(crate) async fn get_ordered_headers<T: SpiFlash, const N: usize>(
+pub async fn get_ordered_headers<T: SpiFlash, const N: usize>(
     flash: &mut T,
     slot_size: usize,
     scratch: &mut ScratchRam,

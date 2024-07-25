@@ -110,7 +110,7 @@ pub(crate) mod bitcache;
 pub mod fragmentation;
 pub mod manager;
 pub mod protocol;
-pub(crate) mod ring;
+pub mod ring;
 pub mod spi_flash;
 
 #[cfg(test)]
