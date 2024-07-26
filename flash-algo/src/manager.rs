@@ -1203,7 +1203,7 @@ async fn fill_bitcache<'a, T: SpiFlash>(
 // NOTE: These probably *shouldn't* be pub, as they are an internal implementation
 // detail, however we use them in integration tests, so we cannot mark them as private
 // or `pub(crate)`. The tests COULD be modified to provide their own buffers, if necessary.
-#[allow(clippy::exhaustive_structs)]
+#[allow(clippy::exhaustive_structs, clippy::partial_pub_fields)]
 pub struct ScratchRam {
     /// One array to hold the list of all received firmware segments
     pub(crate) received_firmware_scratch: BitCache,
@@ -1218,7 +1218,7 @@ pub struct ScratchRam {
     pub(crate) parity_temp_page: [u8; Self::PARITY_TEMP_LEN],
 
     /// A single read segment
-    pub(crate) firmware_rd_scratch: [u8; MAX_SEGMENT_SIZE],
+    pub firmware_rd_scratch: [u8; MAX_SEGMENT_SIZE],
     /// A single write segment
     pub(crate) firmware_wr_scratch: [u8; MAX_SEGMENT_SIZE],
 
