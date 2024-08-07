@@ -28,6 +28,31 @@ compile with older versions but that may change in any new patch release.
 
 See [here](../docs/msrv.md) for details on how the MSRV may be upgraded.
 
+## Notes on Expected Robustness
+
+### Query
+
+Is there a way to predict mathematically how robust the matrix-reconstruction algorithm is?
+
+Ideally, we would like to be able to say with a given ratio of parity to data packets, we can expect to tolerate X percent of packet loss. We can use the parity-robustness-checker to measure this experimentally, but it would be nice to have a predictive model to start with.
+
+### Response (davidv1992 David Venhoek)
+
+This is (primarily) a function of slot size and segment size, assuming sufficiently many parity segments get sent. The algorithm can tolerate losing l packets in the data segment, where l is the maximum integer such that
+17408 + l*segment_size + 4 * floor(l/8)*(floor(l/8)+1)+(l mod 8) * (floor(l/8)+1) < slot_size
+
+Given a loss rate r, the success change of an update on a device is then given by the probability for a binomially distributed variable with N=num_segments and p=r to exceed l.
+
+This assumes sufficient parity segments such that a client can reasonably expect to receive well in excess of num_segments segments in total given the loss rate. The same number of parity segments as data segments is usually sufficient, assuming the firmware is not too small.
+
+Working out for a few scenarios (all assuming slot size of 256kB)
+segment_size = 48 => l=1628
+at maximum firmware size (5098 segments) 50% succes at r=31.9%, 99% at r=30.4% 99.999% at r=29.2%
+segment_size = 40 => l=1681
+at maximum firmware size (6118 segments) 50% succes at r=27.5%, 99% at r=26.15% 99.999% at r=25.1%
+segment_size = 32 => l=1735
+at maximum firmware size (7648 segments) 50% succes at r=22.7%, 99% at r=21.6% 99.999% at r=20.7%
+
 ## License
 
 Licensed under either of
