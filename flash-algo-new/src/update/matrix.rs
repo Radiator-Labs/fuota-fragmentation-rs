@@ -276,6 +276,22 @@ impl Updater {
 
         Ok(self.firmware_slot.index())
     }
+
+    #[must_use]
+    pub fn total_firmware_segments(&self) -> u32 {
+        self.reconstruction_state.n as u32
+    }
+
+    #[must_use]
+    pub fn remaining_firmware_segments(&self) -> u32 {
+        self.total_firmware_segments() - self.received_firmware_segments()
+    }
+
+    #[must_use]
+    pub fn received_firmware_segments(&self) -> u32 {
+        (self.reconstruction_state.done.count_ones() + self.reconstruction_state.used.count_ones())
+            as u32
+    }
 }
 
 impl<const N: usize> SlotManager<N> {
