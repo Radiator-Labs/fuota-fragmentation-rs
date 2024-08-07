@@ -68,7 +68,7 @@ impl<'a, 'b, const N: usize, T: SpiFlash> MatrixStorage<[u8; N]>
     ) -> Result<(), Self::Error> {
         assert!(m < self.max_l);
         let offset = self.offset + matrix_row_offset(m);
-        let data_size = (m + 1) / 8;
+        let data_size = (m / 8) + 1;
         assert!(data_size <= N);
 
         // Inverting the diagonal makes it usable for reconstructing
@@ -89,7 +89,7 @@ impl<'a, 'b, const N: usize, T: SpiFlash> MatrixStorage<[u8; N]>
     async fn row(&mut self, m: usize) -> Result<bitvec::prelude::BitArray<[u8; N]>, Self::Error> {
         assert!(m < self.max_l);
         let offset = self.offset + matrix_row_offset(m);
-        let data_size = (m + 1) / 8;
+        let data_size = (m / 8) + 1;
         assert!(data_size <= N);
 
         let mut result = BitArray::<[u8; N]>::ZERO;
@@ -466,5 +466,89 @@ impl<const N: usize> SlotManager<N> {
             matrix_offset,
             complete,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::cell::RefCell;
+
+    use bitvec::array::BitArray;
+    use parity_reconstruct::MatrixStorage;
+
+    use crate::{
+        manager::{ScratchRam, SlotManager},
+        testutils::heap_flash::Flash,
+        update::matrix::UpdaterMatrixStorage,
+    };
+
+    #[tokio::test]
+    async fn test_matrix_storage_all_ones() {
+        const SLOT_SIZE: usize = 256 * 1024;
+        let mut scratch = ScratchRam::new();
+        let mut flash = Flash::new(64 * 1024, 1024 * 1024);
+        let mut mgr = SlotManager::<4>::new(SLOT_SIZE);
+
+        let init = mgr.try_recover(&mut flash, &mut scratch).await.unwrap();
+        assert!(init.is_none());
+
+        let start = mgr
+            .start_update(&mut flash, &mut scratch, 40, 658)
+            .await
+            .unwrap();
+
+        let flash_refcell = RefCell::new(&mut flash);
+        let mut matrix = UpdaterMatrixStorage {
+            parity_slot: &start.parity_slot,
+            offset: start.matrix_offset,
+            max_l: start.max_l,
+            flash: &flash_refcell,
+        };
+
+        for l in 0..start.max_l {
+            let mut testdata: BitArray<[u8; 256]> = BitArray::ZERO;
+            for i in 0..=l {
+                testdata.set(i, true);
+            }
+
+            matrix.set_row(l, testdata.clone()).await.unwrap();
+
+            let stored: BitArray<[u8; 256]> = matrix.row(l).await.unwrap();
+            assert_eq!(stored, testdata);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_matrix_storage_all_zeros() {
+        const SLOT_SIZE: usize = 256 * 1024;
+        let mut scratch = ScratchRam::new();
+        let mut flash = Flash::new(64 * 1024, 1024 * 1024);
+        let mut mgr = SlotManager::<4>::new(SLOT_SIZE);
+
+        let init = mgr.try_recover(&mut flash, &mut scratch).await.unwrap();
+        assert!(init.is_none());
+
+        let start = mgr
+            .start_update(&mut flash, &mut scratch, 40, 658)
+            .await
+            .unwrap();
+
+        let flash_refcell = RefCell::new(&mut flash);
+        let mut matrix = UpdaterMatrixStorage {
+            parity_slot: &start.parity_slot,
+            offset: start.matrix_offset,
+            max_l: start.max_l,
+            flash: &flash_refcell,
+        };
+
+        for l in 0..start.max_l {
+            let mut testdata: BitArray<[u8; 256]> = BitArray::ZERO;
+            testdata.set(l, true); //required to uphold contract
+
+            matrix.set_row(l, testdata.clone()).await.unwrap();
+
+            let stored: BitArray<[u8; 256]> = matrix.row(l).await.unwrap();
+            assert_eq!(stored, testdata);
+        }
     }
 }
