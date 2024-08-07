@@ -109,9 +109,9 @@ impl Slot {
         if expected_crc32.0 == calc_crc32 {
             Ok(())
         } else {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "Crc32Mismatch expected {:8x} calc {:8x}",
+            #[cfg(feature = "defmt")]
+            defmt::error!(
+                "Crc32Mismatch expected {=u32:x} calc {=u32:x}",
                 expected_crc32.0,
                 calc_crc32
             );

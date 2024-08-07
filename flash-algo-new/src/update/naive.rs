@@ -107,9 +107,9 @@ impl Updater {
     ) -> Result<WriteSegmentOutcome, SpiFlashError<T::Error>> {
         // Determine if this is a firmware segment or a parity segment
         let (slot, segment_0idx) = if segment_1idx == 0 {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "write_segment: Out of bounds segment_1idx {} == 0",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "write_segment: Out of bounds segment_1idx {=u32} == 0",
                 segment_1idx
             );
 
@@ -125,9 +125,9 @@ impl Updater {
                 segment_1idx - 1 - self.total_firmware_segments,
             )
         } else {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "write_segment: Out of bounds segment_1idx {} > (total_firmware_segments {} + total_parity_segments {})",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "write_segment: Out of bounds segment_1idx {=u32} > (total_firmware_segments {=u32} + total_parity_segments {=u32})",
                 segment_1idx,
                 self.total_firmware_segments,
                 self.total_parity_segments
@@ -208,14 +208,14 @@ impl Updater {
 
         // If we've received or recovered all firmware segments, nothing to do
         if self.remaining_firmware_segments == 0 {
-            #[cfg(feature = "rtt_target")]
-            rprintln!("SKIP REPAIR: ALREADY DONE");
+            #[cfg(feature = "defmt")]
+            defmt::info!("SKIP REPAIR: ALREADY DONE");
             return Ok(None);
         }
         // If we don't have any parity segments, nothing to do
         if self.remaining_parity_segments == self.total_parity_segments {
-            #[cfg(feature = "rtt_target")]
-            rprintln!("SKIP REPAIR: NO PARITY");
+            #[cfg(feature = "defmt")]
+            defmt::info!("SKIP REPAIR: NO PARITY");
             return Ok(None);
         }
 
@@ -302,8 +302,13 @@ impl Updater {
                         // frame, which means we can't recover this.
                         //
                         // Bail on checking this entire parity frame
-                        #[cfg(feature = "rtt_target")]
-                        rprintln!("{} -> two missing {}, {}", parity_i, old_i, firmware_i);
+                        #[cfg(feature = "defmt")]
+                        defmt::info!(
+                            "{=usize} -> two missing {=usize}, {=usize}",
+                            parity_i,
+                            old_i,
+                            firmware_i
+                        );
                         continue 'parity;
                     }
                     (false, _) => {

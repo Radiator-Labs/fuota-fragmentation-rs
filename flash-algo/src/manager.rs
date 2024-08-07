@@ -69,9 +69,6 @@ use bitvec::array::BitArray;
 use core::iter::Take;
 use crc::{Crc, CRC_32_CKSUM};
 
-#[cfg(feature = "rtt_target")]
-use rtt_target::rprintln;
-
 /// Offset in bytes of the Header within a slot
 pub const HEADER_OFFSET: usize = 0;
 
@@ -574,8 +571,8 @@ impl<const N: usize> SlotManager<N> {
                 TotalStatus::AppWriteAborted => {}
                 TotalStatus::BootloadWriteInProgress => {
                     // unreachable!("How did we boot to the app?")
-                    #[cfg(feature = "rtt_target")]
-                    rprintln!(
+                    #[cfg(feature = "defmt")]
+                    defmt::info!(
                         "Unreachable app_boot_status with TotalStatus::BootloadWriteInProgress"
                     );
                     self.erase_slot(flash, *idx).await?;
@@ -764,9 +761,9 @@ impl ActiveStatus {
     ) -> Result<WriteSegmentOutcome, SpiFlashError<T::Error>> {
         // Determine if this is a firmware segment or a parity segment
         let (slot_idx, segment_0idx) = if segment_1idx == 0 {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "write_segment: Out of bounds segment_1idx {} == 0",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "write_segment: Out of bounds segment_1idx {=u32} == 0",
                 segment_1idx
             );
 
@@ -782,9 +779,9 @@ impl ActiveStatus {
                 segment_1idx - 1 - self.total_firmware_segments,
             )
         } else {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "write_segment: Out of bounds segment_1idx {} > (total_firmware_segments {} + total_parity_segments {})",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "write_segment: Out of bounds segment_1idx {=u32} > (total_firmware_segments {=u32} + total_parity_segments {=u32})",
                 segment_1idx,
                 self.total_firmware_segments,
                 self.total_parity_segments
@@ -798,16 +795,19 @@ impl ActiveStatus {
         assert_eq!(self.segment_size, bytes.len());
 
         if !(written_in_range && data_in_range) {
-            #[cfg(feature = "rtt_target")]
-            rprintln!("write_segment: Out of bounds segment_0idx {}", segment_0idx);
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "  written_in_range {}, idx < WRITTEN_SIZE {}",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "write_segment: Out of bounds segment_0idx {=u32}",
+                segment_0idx
+            );
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "  written_in_range {=bool}, idx < WRITTEN_SIZE {=usize}",
                 written_in_range,
                 WRITTEN_SIZE
             );
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
+            #[cfg(feature = "defmt")]
+            defmt::info!(
                 "  data_in_range {}, idx * segment_size {} <= slot_size {}",
                 data_in_range,
                 self.segment_size,
@@ -898,14 +898,14 @@ impl ActiveStatus {
 
         // If we've received or recovered all firmware segments, nothing to do
         if self.remaining_firmware_segments == 0 {
-            #[cfg(feature = "rtt_target")]
-            rprintln!("SKIP REPAIR: ALREADY DONE");
+            #[cfg(feature = "defmt")]
+            defmt::info!("SKIP REPAIR: ALREADY DONE");
             return Ok(None);
         }
         // If we don't have any parity segments, nothing to do
         if self.remaining_parity_segments == self.total_parity_segments {
-            #[cfg(feature = "rtt_target")]
-            rprintln!("SKIP REPAIR: NO PARITY");
+            #[cfg(feature = "defmt")]
+            defmt::info!("SKIP REPAIR: NO PARITY");
             return Ok(None);
         }
 
@@ -996,8 +996,13 @@ impl ActiveStatus {
                         // frame, which means we can't recover this.
                         //
                         // Bail on checking this entire parity frame
-                        #[cfg(feature = "rtt_target")]
-                        rprintln!("{} -> two missing {}, {}", parity_i, old_i, firmware_i);
+                        #[cfg(feature = "defmt")]
+                        defmt::info!(
+                            "{=usize} -> two missing {=usize}, {=usize}",
+                            parity_i,
+                            old_i,
+                            firmware_i
+                        );
                         continue 'parity;
                     }
                     (false, _) => {
@@ -1422,9 +1427,9 @@ pub async fn check_crc_from_index<T: SpiFlash>(
     if expected_crc32.0 == calc_crc32 {
         Ok(())
     } else {
-        #[cfg(feature = "rtt_target")]
-        rprintln!(
-            "Crc32Mismatch expected {:8x} calc {:8x}",
+        #[cfg(feature = "defmt")]
+        defmt::error!(
+            "Crc32Mismatch expected {=u32:x} calc {=u32:x}",
             expected_crc32.0,
             calc_crc32
         );

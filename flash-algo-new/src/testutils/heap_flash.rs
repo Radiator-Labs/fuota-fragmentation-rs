@@ -8,8 +8,6 @@
 
 extern crate std;
 use crate::spi_flash::{SpiFlash, SpiFlashError};
-#[cfg(feature = "rtt_target")]
-use rtt_target::rprintln;
 use std::{format, prelude::rust_2021::*, vec};
 
 /// It is typical that individual write commands cannot span more than a single page
@@ -210,9 +208,9 @@ impl SpiFlash for Flash {
         }
         // Check out-of-bounds access
         if start_addr >= self.total_size {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "erase_block: start_addr {} >= total_size {}",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "erase_block: start_addr {=usize} >= total_size {=usize}",
                 start_addr,
                 self.total_size
             );
@@ -239,9 +237,9 @@ impl SpiFlash for Flash {
     ) -> Result<(), SpiFlashError<Error>> {
         // Can't read out of bounds
         if start_addr >= self.total_size {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "read_to: start_addr {} >= total_size {}",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "read_to: start_addr {=usize} >= total_size {=usize}",
                 start_addr,
                 self.total_size
             );
@@ -249,9 +247,9 @@ impl SpiFlash for Flash {
             return Err(SpiFlashError::OutOfBounds);
         }
         if (start_addr + buf.len()) > self.total_size {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "start_addr {} + buf.len {}} > total_size {}",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "start_addr {=usize} + buf.len {=usize} > total_size {=usize}",
                 start_addr,
                 buf.len(),
                 self.total_size
@@ -315,9 +313,9 @@ impl SpiFlash for Flash {
         mut buf: &[u8],
     ) -> Result<(), SpiFlashError<Error>> {
         if start_addr >= self.total_size {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "write_from start_addr {} >= total_size {}",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "write_from start_addr {=usize} >= total_size {=usize}",
                 start_addr,
                 self.total_size
             );
@@ -325,9 +323,9 @@ impl SpiFlash for Flash {
             return Err(SpiFlashError::OutOfBounds);
         }
         if (start_addr + buf.len()) > self.total_size {
-            #[cfg(feature = "rtt_target")]
-            rprintln!(
-                "start_addr {} + buf.len {} > total_size {}",
+            #[cfg(feature = "defmt")]
+            defmt::info!(
+                "start_addr {} + buf.len {=usize} > total_size {=usize}",
                 start_addr,
                 buf.len(),
                 self.total_size
