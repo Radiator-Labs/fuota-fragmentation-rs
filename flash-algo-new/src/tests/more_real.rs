@@ -385,7 +385,7 @@ async fn could_it_recover() {
         if cfg!(feature = "force-full-r") {
             10
         } else {
-            12
+            18
         }
     } else {
         if cfg!(feature = "force-full-r") {
@@ -396,25 +396,23 @@ async fn could_it_recover() {
     };
 
     let num_parity_every_16_fail = if cfg!(feature = "matrixreconstructor") {
-        if cfg!(feature = "force-full-r") {
-            42
-        } else {
-            37
-        }
+        38
     } else {
         parity_frags.len()
     };
 
     let num_parity_every_16_fail_offset = if cfg!(feature = "matrixreconstructor") {
-        37
+        if cfg!(feature = "force-full-r") {
+            37
+        } else {
+            38
+        }
     } else {
         parity_frags.len()
     };
 
     let num_parity_first_five_fail = if cfg!(feature = "matrixreconstructor") {
-        // Note, the fact that the other reconstructor can
-        // do it in fewer may actually indicate a bug in it.
-        6
+        5
     } else {
         5
     };
@@ -433,7 +431,7 @@ async fn could_it_recover() {
         if cfg!(feature = "force-full-r") {
             22
         } else {
-            24
+            21
         }
     } else {
         parity_frags.len()
