@@ -36,5 +36,7 @@ jobs:
         cargo test --no-default-features --features force-full-r
         cargo test --no-default-features --features matrixreconstructor
         cargo fmt --all -- --check
-        cargo clippy
+        cargo clippy --no-default-features
+        cargo clippy --no-default-features --features force-full-r
+        cargo clippy --no-default-features --features matrixreconstructor
         cargo machete
