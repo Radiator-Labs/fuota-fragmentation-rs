@@ -47,11 +47,15 @@ This assumes sufficient parity segments such that a client can reasonably expect
 
 Working out for a few scenarios (all assuming slot size of 256kB)
 segment_size = 48 => l=1628
-at maximum firmware size (5098 segments) 50% succes at r=31.9%, 99% at r=30.4% 99.999% at r=29.2%
+at maximum firmware size (5098 segments) 50% success at r=31.9%, 99% at r=30.4% 99.999% at r=29.2%
 segment_size = 40 => l=1681
-at maximum firmware size (6118 segments) 50% succes at r=27.5%, 99% at r=26.15% 99.999% at r=25.1%
+at maximum firmware size (6118 segments) 50% success at r=27.5%, 99% at r=26.15% 99.999% at r=25.1%
 segment_size = 32 => l=1735
-at maximum firmware size (7648 segments) 50% succes at r=22.7%, 99% at r=21.6% 99.999% at r=20.7%
+at maximum firmware size (7648 segments) 50% success at r=22.7%, 99% at r=21.6% 99.999% at r=20.7%
+
+### Actual performance
+
+The team at [Kelvin](http://kel.vin) (formerly known as [Radiator Labs](https://github.com/Radiator-Labs)) tested real-world FUOTA update over the air with segment_size = 50, 3354 data segments, and 100% parity (3354 parity packets). In this testing, we successfully downloaded with r=45% (intentionally dropped 45% of packets in FUOTA test.) At r=50%, we missed successfully recovering by ONE packet.
 
 ## License
 
