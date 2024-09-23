@@ -118,9 +118,14 @@ pub fn get_parity_matrix_row(cap_n: u32, cap_m: u32, buf: &mut BitArray<[u8; MAX
         // * 1 <= R <= 1/2 of data segments (without `force-full-r`)
         let allow_redundancy = cfg!(not(feature = "force-full-r"));
 
-        // NOTE: we already asserted on bounds checking above
-        #[allow(clippy::unwrap_used)]
-        #[allow(clippy::indexing_slicing)] // TODO: eliminate possible panic
+        #[allow(
+            clippy::unwrap_used,
+            reason = "NOTE: we already asserted on bounds checking above"
+        )]
+        #[allow(
+            clippy::indexing_slicing,
+            reason = "NOTE: we already asserted on bounds checking above"
+        )]
         if allow_redundancy || !buf.get(r as usize).unwrap() {
             buf.set(r as usize, true);
             nb_coeff += 1;

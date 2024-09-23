@@ -186,7 +186,6 @@ impl Flash {
 /// This needs to exist to fulfill the `[SpiFlash]` trait's associated type,
 /// however it is empty as `[Flash]` will always panic if an invariant is
 /// violated for testing purposes.
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum Error {}
 

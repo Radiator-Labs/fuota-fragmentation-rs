@@ -62,7 +62,6 @@
 
 use segment_status_table::MAX_SEGMENTS;
 
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum FlashReprError {
@@ -120,7 +119,6 @@ pub const DATA_PAYLOAD_OFFSET: usize = DATA_SIGNATURE_OFFSET + Signature::SIZE;
 /// # DANGER
 ///
 /// If you add/remove fields, you MUST update the `FlashRepr`!
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct SlotHeader {
     /// What KIND of slot is this? Firmware or Parity?
@@ -143,7 +141,6 @@ pub struct SlotHeader {
 }
 
 /// Slot Kind
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum Kind {
     /// Firmware Slot
@@ -155,12 +152,10 @@ pub enum Kind {
 /// Sequence Number of the Slot
 ///
 /// Wrapper type to allow for trait impls and potential future type changes
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq, Clone, Copy, PartialOrd, Ord, Eq)]
 pub struct SequenceNumber(pub u32);
 
 /// Status of the Slot
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum WriteExtStatus {
     /// A transfer has started but not completed
@@ -173,7 +168,6 @@ pub enum WriteExtStatus {
 }
 
 /// Status of the Slot
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum WriteIntStatus {
     /// A transfer has started but not completed
@@ -185,7 +179,6 @@ pub enum WriteIntStatus {
 /// The size of each segment in this slot
 ///
 /// Wrapper type to allow for trait impls and potential future type changes
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct SegmentSize(pub u32);
 
@@ -194,24 +187,20 @@ pub struct SegmentSize(pub u32);
 /// Wrapper type to allow for trait impls and potential future type changes
 ///
 /// NOTE: MUST be less than [`segment_status_table::MAX_SEGMENTS`]
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct NumberOfSegments(pub u32);
 
 /// Placeholder cryptographic signature
 // TODO: "Clone" is questionable here
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct Signature(pub [u8; 64]);
 
 /// A CRC32 signature
 // TODO: "Clone" is questionable here
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct Crc32(pub u32);
 
 /// Have we attempted to boot this before?
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum BootOutcome {
     Untested,
@@ -532,7 +521,6 @@ impl FlashRepr for SlotHeader {
     }
 }
 
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum TotalStatus {
     // WriteExt: InProgress, WriteInt: InProgress, Outcome: Untested

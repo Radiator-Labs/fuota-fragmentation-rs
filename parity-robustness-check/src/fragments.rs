@@ -5,7 +5,6 @@ use flash_algo_new::{
     layout::{Crc32, FlashRepr, Signature},
 };
 
-#[allow(clippy::exhaustive_structs)]
 pub struct Fragments {
     _crc32: u32,
     data_fragments: Vec<Vec<u8>>,

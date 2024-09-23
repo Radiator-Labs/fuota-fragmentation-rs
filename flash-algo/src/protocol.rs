@@ -60,7 +60,6 @@
 //! Most values are stored as either a `u32`, or a `u8`. Values are always stored
 //! little-endian.
 
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum FlashReprError {
@@ -85,7 +84,6 @@ pub trait FlashRepr: Sized {
     ///
     /// # Errors
     /// Reports error if unable to write to buffer
-    #[allow(clippy::result_unit_err)]
     fn write_to_bytes<'a>(&self, buf: &'a mut [u8]) -> Result<&'a mut [u8], FlashReprError>;
 }
 
@@ -97,7 +95,6 @@ pub trait FlashRepr: Sized {
 /// # DANGER
 ///
 /// If you add/remove fields, you MUST update the `FlashRepr`!
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct SlotHeader {
     /// What KIND of slot is this? Firmware or Parity?
@@ -120,7 +117,6 @@ pub struct SlotHeader {
 }
 
 /// Slot Kind
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum Kind {
     /// Firmware Slot
@@ -132,12 +128,10 @@ pub enum Kind {
 /// Sequence Number of the Slot
 ///
 /// Wrapper type to allow for trait impls and potential future type changes
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct SequenceNumber(pub u32);
 
 /// Status of the Slot
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum WriteExtStatus {
     /// A transfer has started but not completed
@@ -150,7 +144,6 @@ pub enum WriteExtStatus {
 }
 
 /// Status of the Slot
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum WriteIntStatus {
     /// A transfer has started but not completed
@@ -162,7 +155,6 @@ pub enum WriteIntStatus {
 /// The size of each segment in this slot
 ///
 /// Wrapper type to allow for trait impls and potential future type changes
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct SegmentSize(pub u32);
 
@@ -171,24 +163,20 @@ pub struct SegmentSize(pub u32);
 /// Wrapper type to allow for trait impls and potential future type changes
 ///
 /// NOTE: MUST be less than [`segment_status_table::MAX_SEGMENTS`]
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 pub struct NumberOfSegments(pub u32);
 
 /// Placeholder cryptographic signature
 // TODO: "Clone" is questionable here
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct Signature(pub [u8; 64]);
 
 /// A CRC32 signature
 // TODO: "Clone" is questionable here
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct Crc32(pub u32);
 
 /// Have we attempted to boot this before?
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum BootOutcome {
     Untested,
@@ -445,7 +433,6 @@ impl FlashRepr for BootOutcome {
     }
 }
 
-#[allow(dead_code)]
 impl SlotHeader {
     pub const KIND_OFFSET: usize = 0;
     pub const SEQUENCE_NUMBER_OFFSET: usize = 4;
@@ -465,7 +452,7 @@ impl FlashRepr for SlotHeader {
         + WriteIntStatus::SIZE
         + BootOutcome::SIZE);
 
-    #[allow(clippy::shadow_reuse)] // TODO: eliminate this allow
+    #[allow(clippy::shadow_reuse, reason = "do not want to change old algorithm")]
     fn take_from_bytes(bytes: &[u8]) -> Option<(Self, &[u8])> {
         let (kind, later) = Kind::take_from_bytes(bytes)?;
         let (seq_no, later) = SequenceNumber::take_from_bytes(later)?;
@@ -488,7 +475,7 @@ impl FlashRepr for SlotHeader {
         Some((me, later))
     }
 
-    #[allow(clippy::shadow_reuse)] // TODO: eliminate this allow
+    #[allow(clippy::shadow_reuse, reason = "do not want to change old algorithm")]
     fn write_to_bytes<'a>(&self, buf: &'a mut [u8]) -> Result<&'a mut [u8], FlashReprError> {
         let later = Kind::write_to_bytes(&self.kind, buf)?;
         let later = SequenceNumber::write_to_bytes(&self.seq_no, later)?;
@@ -501,7 +488,6 @@ impl FlashRepr for SlotHeader {
     }
 }
 
-#[allow(clippy::exhaustive_enums)]
 #[derive(Debug, PartialEq)]
 pub enum TotalStatus {
     // WriteExt: InProgress, WriteInt: InProgress, Outcome: Untested
@@ -529,7 +515,10 @@ pub enum TotalStatus {
 pub fn total_status(hdr: &SlotHeader) -> TotalStatus {
     let slot_id_valid = hdr.seq_no.0 != u32::MAX;
 
-    #[allow(clippy::pattern_type_mismatch)] // TODO: eliminate this allow
+    #[allow(
+        clippy::pattern_type_mismatch,
+        reason = "do not want to change old algorithm"
+    )]
     match (
         slot_id_valid,
         &hdr.write_ext_status,

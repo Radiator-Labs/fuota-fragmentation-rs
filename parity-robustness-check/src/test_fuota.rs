@@ -125,7 +125,6 @@ async fn act_on_firmware_complete(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(clippy::exhaustive_enums)]
 pub(crate) enum FuotaResponse {
     Incomplete,
     Complete { last_fragment_index: usize },

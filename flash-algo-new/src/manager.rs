@@ -38,7 +38,6 @@ pub(crate) use fs::indexed_headers;
 ///     let scratch: &'static mut ScratchRam = singleton!(: ScratchRam = ScratchRam::new()).unwrap();
 /// }
 /// ```
-#[allow(clippy::exhaustive_structs)]
 pub struct ScratchRam {
     /// One array to hold the list of all received firmware segments
     #[cfg(not(feature = "matrixreconstructor"))]
@@ -150,7 +149,6 @@ impl<E> From<FlashReprError> for ManagerError<E> {
 }
 
 /// Outcome of a call to `[SlotManager::bl_boot_status]`
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum BlBootStatus {

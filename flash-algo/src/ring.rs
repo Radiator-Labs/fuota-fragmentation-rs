@@ -9,14 +9,12 @@ use crate::{
     spi_flash::{SpiFlash, SpiFlashError},
 };
 
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug)]
 pub struct IndexedHeader {
     pub idx: usize,
     pub hdr: Option<SlotHeader>,
 }
 
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug)]
 pub(crate) struct TwoHdrs<'a> {
     pub older: &'a IndexedHeader,

@@ -91,7 +91,6 @@ pub const DATA_SIGNATURE_OFFSET: usize = DATA_CRC32_OFFSET + Crc32::SIZE;
 pub const DATA_PAYLOAD_OFFSET: usize = DATA_SIGNATURE_OFFSET + Signature::SIZE;
 
 /// Error type used by `[SlotManager]` and `[ActiveStatus]`
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum ManagerError<E> {
@@ -216,7 +215,6 @@ impl<const N: usize> SlotManager<N> {
     ///
     /// # Errors
     /// Reports if SPI Flash activities fail
-    #[allow(clippy::match_same_arms)]
     pub async fn validate_firmware_slot<T: SpiFlash>(
         &self,
         flash: &mut T,
@@ -229,16 +227,14 @@ impl<const N: usize> SlotManager<N> {
             .await?
             .ok_or(SpiFlashError::HardwareFailure)?;
 
-        // TODO: remove this allow
-        #[allow(clippy::unneeded_field_pattern)]
         let SlotHeader {
             kind,
-            seq_no: _,
+            seq_no: _seq_no,
             segment_size,
             num_segments,
             write_ext_status: status,
             // We don't care about internal write status
-            write_int_status: _,
+            write_int_status: _write_int_status,
             boot_outcome,
         } = hdr;
 
@@ -247,8 +243,7 @@ impl<const N: usize> SlotManager<N> {
         is_good &= status == WriteExtStatus::Complete;
 
         is_good &= match boot_outcome {
-            BootOutcome::Untested => true,
-            BootOutcome::Successful => true,
+            BootOutcome::Untested | BootOutcome::Successful => true,
             BootOutcome::Unsuccessful => false,
         };
 
@@ -259,7 +254,6 @@ impl<const N: usize> SlotManager<N> {
         let slot_start = idx * self.slot_size;
 
         // Ensure the CRC checks out
-        #[allow(clippy::map_err_ignore)]
         check_crc_from_index(
             flash,
             scratch,
@@ -268,7 +262,7 @@ impl<const N: usize> SlotManager<N> {
             slot_start,
         )
         .await
-        .map_err(|_| SpiFlashError::HardwareFailure)?;
+        .map_err(|_ignore_err| SpiFlashError::HardwareFailure)?;
 
         let len = segment_size.0 as usize * num_segments.0 as usize;
 
@@ -318,7 +312,6 @@ impl<const N: usize> SlotManager<N> {
     ///
     /// # Panics
     /// Panics if write to scratch area fails. This is an unwrap that should be eliminated.
-    #[allow(clippy::too_many_arguments)]
     pub async fn start<T: SpiFlash>(
         &mut self,
         flash: &mut T,
@@ -331,7 +324,7 @@ impl<const N: usize> SlotManager<N> {
 
         let mut firmware_slot_idx = usize::MAX;
         let mut parity_slot_idx = usize::MAX;
-        #[allow(clippy::cast_possible_truncation)]
+        #[allow(clippy::cast_possible_truncation, reason = "Embedded usize is u32")]
         let todo_list = [
             (Kind::Firmware, firmware_segments, &mut firmware_slot_idx),
             // TODO(AJM): Is this okay?
@@ -363,7 +356,10 @@ impl<const N: usize> SlotManager<N> {
                 .await?;
         }
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "Embedded usize is u32.. again!"
+        )]
         Ok(ActiveStatus {
             segment_size: segment_size as usize,
             slot_size: self.slot_size,
@@ -402,19 +398,19 @@ impl<const N: usize> SlotManager<N> {
             return Ok(BlBootStatus::Idle);
         }
 
-        #[allow(clippy::cast_possible_truncation, clippy::match_same_arms)]
+        #[allow(clippy::cast_possible_truncation, reason = "Embedded usize is u32")]
         match total_status(f_hdr) {
             TotalStatus::BootloadWriteInProgress => {
                 Ok(BlBootStatus::IncompleteInternal { idx: fw.idx as u32 })
             }
             TotalStatus::FirstBootPendingAck => Ok(BlBootStatus::FailedLoad { idx: fw.idx as u32 }),
             // Anything else: Idle
-            TotalStatus::BlankSlot => Ok(BlBootStatus::Idle),
-            TotalStatus::AppWriteInProgress => Ok(BlBootStatus::Idle),
-            TotalStatus::AppWriteAborted => Ok(BlBootStatus::Idle),
-            TotalStatus::ConfirmedImage => Ok(BlBootStatus::Idle),
-            TotalStatus::RejectedImage => Ok(BlBootStatus::Idle),
-            TotalStatus::InvalidNeedsErase => Ok(BlBootStatus::Idle),
+            TotalStatus::BlankSlot
+            | TotalStatus::AppWriteInProgress
+            | TotalStatus::AppWriteAborted
+            | TotalStatus::ConfirmedImage
+            | TotalStatus::RejectedImage
+            | TotalStatus::InvalidNeedsErase => Ok(BlBootStatus::Idle),
         }
     }
 
@@ -505,7 +501,10 @@ impl<const N: usize> SlotManager<N> {
     ///
     /// # Panics
     /// Panics if write to buffer fails. This is an unwrap that should be eliminated.
-    #[allow(clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "did not want to refactor the old algorithm"
+    )]
     pub async fn app_boot_status<T: SpiFlash>(
         &mut self,
         flash: &mut T,
@@ -549,7 +548,10 @@ impl<const N: usize> SlotManager<N> {
 
         // Now check the "other" items to see if they need remediation
         let now_indexes = [f_idx, p_idx];
-        #[allow(clippy::pattern_type_mismatch)] // TODO: eliminate this allow
+        #[allow(
+            clippy::pattern_type_mismatch,
+            reason = "unclear how to refactor, TODO: eliminate this allow"
+        )]
         for IndexedHeader {
             idx,
             hdr: hdr_option,
@@ -561,14 +563,10 @@ impl<const N: usize> SlotManager<N> {
             let Some(hdr) = hdr_option else {
                 continue;
             };
-            #[allow(clippy::match_same_arms)]
-            #[allow(clippy::unreachable)] // TODO: eliminate this allow
             match total_status(hdr) {
-                TotalStatus::BlankSlot => {}
                 TotalStatus::AppWriteInProgress => {
                     self.write_ext_status_aborted(flash, *idx).await?;
                 }
-                TotalStatus::AppWriteAborted => {}
                 TotalStatus::BootloadWriteInProgress => {
                     // unreachable!("How did we boot to the app?")
                     #[cfg(feature = "defmt")]
@@ -577,12 +575,14 @@ impl<const N: usize> SlotManager<N> {
                     );
                     self.erase_slot(flash, *idx).await?;
                 }
-                TotalStatus::FirstBootPendingAck => {}
-                TotalStatus::ConfirmedImage => {}
-                TotalStatus::RejectedImage => {}
                 TotalStatus::InvalidNeedsErase => {
                     self.erase_slot(flash, *idx).await?;
                 }
+                TotalStatus::BlankSlot
+                | TotalStatus::AppWriteAborted
+                | TotalStatus::FirstBootPendingAck
+                | TotalStatus::ConfirmedImage
+                | TotalStatus::RejectedImage => {}
             }
         }
 
@@ -692,7 +692,6 @@ impl<const N: usize> SlotManager<N> {
 //
 // TODO: The contained fields should not be `pub`, but are made so for ease of testing.
 // This could be fixed with proper accessor methods.
-#[allow(clippy::exhaustive_structs)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub struct ActiveStatus {
@@ -832,7 +831,7 @@ impl ActiveStatus {
             DATA_NOT_WRITTEN => {
                 // Not written, we're good
             }
-            #[allow(clippy::indexing_slicing)] // TODO: eliminate possible panic
+            #[allow(clippy::indexing_slicing, reason = "TODO: eliminate possible panic")]
             DATA_WRITTEN => {
                 // Uh oh, was written, does the existing value match the current data?
                 flash.read_to(data_start, read_scratch).await?;
@@ -840,7 +839,7 @@ impl ActiveStatus {
                 // All good!
                 return Ok(WriteSegmentOutcome::Consumed);
             }
-            #[allow(clippy::panic)] // TODO: eliminate this panic
+            #[allow(clippy::panic, reason = "TODO: eliminate this panic")]
             _ => panic!(),
         }
 
@@ -879,7 +878,10 @@ impl ActiveStatus {
     ///
     /// # Errors
     /// Reports if SPI Flash activities fail
-    #[allow(clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "do not want to refactor old algorithm"
+    )]
     pub async fn repair_step<T: SpiFlash>(
         &mut self,
         flash: &mut T,
@@ -909,9 +911,12 @@ impl ActiveStatus {
             return Ok(None);
         }
 
-        #[allow(clippy::indexing_slicing)] // TODO: eliminate possible panic
+        #[allow(clippy::indexing_slicing, reason = "TODO: eliminate possible panic")]
         let firmware_rd_scratch = &mut scratch.firmware_rd_scratch[..self.segment_size];
-        #[allow(clippy::indexing_slicing)] // TODO: eliminate possible panic
+        #[allow(
+            clippy::indexing_slicing,
+            reason = "TODO: eliminate possible panic, again"
+        )]
         let firmware_wr_scratch = &mut scratch.firmware_wr_scratch[..self.segment_size];
 
         // Read which firmware and parity blocks we have.
@@ -951,7 +956,7 @@ impl ActiveStatus {
             // space.
             //
             // TODO(AJM): Replace this BitCache with a persistent one!
-            #[allow(clippy::cast_possible_truncation)]
+            #[allow(clippy::cast_possible_truncation, reason = "Embedded usize is u32")]
             get_parity_matrix_row(
                 parity_i as u32 + 1,
                 self.total_firmware_segments,
@@ -984,7 +989,7 @@ impl ActiveStatus {
                 // data segment.
                 let is_missing = *p && !f;
 
-                #[allow(unused_variables)]
+                #[allow(unused_variables, reason = "Used when defmt configuration set")]
                 match (is_missing, missing) {
                     (true, None) => {
                         // This IS interesting, AND it is the first missing
@@ -1046,7 +1051,7 @@ impl ActiveStatus {
 
                 // By now, we should have now recovered the frame, write it using
                 // the normal writing process so it is marked as received.
-                #[allow(clippy::cast_possible_truncation)]
+                #[allow(clippy::cast_possible_truncation, reason = "embedded usize is u32")]
                 self.write_segment_internal(
                     flash,
                     firmware_rd_scratch,
@@ -1159,6 +1164,10 @@ async fn fill_bitcache<'a, T: SpiFlash>(
 
     while remain != 0 {
         let stride = remain.min(scratch_bytes.len());
+        #[allow(
+            clippy::indexing_slicing,
+            reason = "do not want to refactor old algorithm"
+        )]
         let buf = &mut scratch_bytes[..stride];
 
         flash.read_to(addr, buf).await?;
@@ -1208,7 +1217,10 @@ async fn fill_bitcache<'a, T: SpiFlash>(
 // NOTE: These probably *shouldn't* be pub, as they are an internal implementation
 // detail, however we use them in integration tests, so we cannot mark them as private
 // or `pub(crate)`. The tests COULD be modified to provide their own buffers, if necessary.
-#[allow(clippy::exhaustive_structs, clippy::partial_pub_fields)]
+#[allow(
+    clippy::partial_pub_fields,
+    reason = "Do not want to change deployed API"
+)]
 pub struct ScratchRam {
     /// One array to hold the list of all received firmware segments
     pub(crate) received_firmware_scratch: BitCache,
@@ -1259,7 +1271,6 @@ impl ScratchRam {
 // struct ScratchRam ---------------------------
 
 /// The outcome of a call to `[ActiveStatus::write_segment]`
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum WriteSegmentOutcome {
@@ -1285,7 +1296,6 @@ pub enum WriteSegmentOutcome {
 }
 
 /// Outcome of a call to `[SlotManager::app_boot_status]`
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum AppBootStatus {
@@ -1296,7 +1306,6 @@ pub enum AppBootStatus {
 }
 
 /// Outcome of a call to `[SlotManager::bl_boot_status]`
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum BlBootStatus {
@@ -1311,7 +1320,6 @@ pub enum BlBootStatus {
 }
 
 /// Outcome of a call to `[SlotManager::validate_firmware_slot]`
-#[allow(clippy::exhaustive_structs)]
 pub struct Validated {
     /// The start of the FIRMWARE of the given slot.
     ///
@@ -1351,7 +1359,6 @@ pub async fn check_crc_from_index<T: SpiFlash>(
     let mut digest = calc_crc.digest();
 
     // Read header
-    #[allow(clippy::map_err_ignore)]
     let hdr = read_header_from_slot(flash, scratch, slot_start)
         .await?
         .ok_or(ManagerError::UnexpectedMissingHeader)?;
@@ -1365,13 +1372,16 @@ pub async fn check_crc_from_index<T: SpiFlash>(
     let (_expected_sig, _later) = Signature::take_from_bytes(later).ok_or(ManagerError::Fatal)?;
 
     let segments = match segments_option {
-        #[allow(clippy::cast_possible_truncation)]
+        #[allow(clippy::cast_possible_truncation, reason = "embedded usize is u32")]
         Some(s) if s as u32 == hdr.num_segments.0 => s,
         Some(_) => return Err(ManagerError::SegmentCountMismatch),
         None => hdr.num_segments.0 as usize,
     };
     let segment_size = match segment_size_option {
-        #[allow(clippy::cast_possible_truncation)]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "embedded usize is u32, again"
+        )]
         Some(s) if s as u32 == hdr.segment_size.0 => s,
         Some(_) => return Err(ManagerError::SegmentSizeMismatch),
         None => hdr.segment_size.0 as usize,
@@ -1393,12 +1403,14 @@ pub async fn check_crc_from_index<T: SpiFlash>(
     let mut skip_remain = Some(Crc32::SIZE + Signature::SIZE);
 
     // Take a properly sized scratch buffer for our segment sizes
-    #[allow(clippy::indexing_slicing)]
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "do not want to change old algorithm"
+    )]
     let segment_buf = &mut scratch.firmware_rd_scratch[..segment_size];
 
     for idx in 0..segments {
         // Decide if any header bytes still need to be skipped
-        #[allow(clippy::indexing_slicing)]
         let to_skip = match skip_remain.take() {
             // Nope, no remaining header bytes!
             None => 0,
@@ -1418,7 +1430,10 @@ pub async fn check_crc_from_index<T: SpiFlash>(
         let data_start = slot_start + DATA_REGION_OFFSET + (idx * segment_size);
 
         flash.read_to(data_start, segment_buf).await?;
-        #[allow(clippy::indexing_slicing)]
+        #[allow(
+            clippy::indexing_slicing,
+            reason = "do not want to change old algorithm, again"
+        )]
         digest.update(&segment_buf[to_skip..]);
     }
 
@@ -1451,7 +1466,6 @@ pub(crate) fn next_seq(cur: u32) -> u32 {
 // struct OldestReport ---------------------------
 
 /// A structure that contains the oldest slot index, and the next sequence number
-#[allow(clippy::exhaustive_structs)]
 #[derive(Debug, PartialEq)]
 struct OldestReport {
     slot_idx: usize,

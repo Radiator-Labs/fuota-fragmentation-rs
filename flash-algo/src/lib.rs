@@ -8,8 +8,14 @@
 #![deny(clippy::alloc_instead_of_core)]
 // #![allow(clippy::allow_attributes)] // coming in 1.70.0
 #![deny(clippy::allow_attributes_without_reason)]
-#![allow(clippy::arithmetic_side_effects)]
-#![allow(clippy::as_conversions)]
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "Kelvin style guide allows arithmetic_side_effects"
+)]
+#![allow(
+    clippy::as_conversions,
+    reason = "Kelvin style guide allows as_conversions"
+)]
 #![deny(clippy::as_underscore)]
 #![deny(clippy::assertions_on_constants)]
 #![deny(clippy::clone_on_ref_ptr)]
@@ -23,8 +29,14 @@
 #![deny(clippy::else_if_without_else)]
 #![deny(clippy::empty_drop)]
 #![deny(clippy::empty_structs_with_brackets)]
-#![deny(clippy::exhaustive_enums)]
-#![deny(clippy::exhaustive_structs)]
+#![allow(
+    clippy::exhaustive_enums,
+    reason = "Kelvin style guide allows exhaustive_enums"
+)]
+#![allow(
+    clippy::exhaustive_structs,
+    reason = "Kelvin style guide allows exhaustive_structs"
+)]
 #![deny(clippy::exit)]
 #![deny(clippy::expect_used)]
 #![deny(clippy::filetype_is_file)]
@@ -35,12 +47,20 @@
 #![deny(clippy::get_unwrap)]
 #![deny(clippy::if_then_some_else_none)]
 #![deny(clippy::impl_trait_in_params)]
-#![allow(clippy::implicit_return)]
-#![allow(clippy::indexing_slicing)] // TODO: Remove this. Due to clippy bug looking into derive macro
+#![allow(
+    clippy::implicit_return,
+    reason = "Kelvin style guide allows implicit_return"
+)]
+#![deny(clippy::indexing_slicing)] // TODO: Remove this. Due to clippy bug looking into derive macro
 #![deny(clippy::inline_asm_x86_att_syntax)]
-#![allow(clippy::inline_asm_x86_intel_syntax)]
-#![allow(clippy::arithmetic_side_effects)]
-#![allow(clippy::integer_division)]
+#![allow(
+    clippy::inline_asm_x86_intel_syntax,
+    reason = "Kelvin style guide allows inline_asm_x86_intel_syntax"
+)]
+#![allow(
+    clippy::integer_division,
+    reason = "Kelvin style guide allows integer division"
+)]
 #![deny(clippy::large_include_file)]
 #![deny(clippy::let_underscore_must_use)]
 #![deny(clippy::let_underscore_untyped)]
@@ -48,17 +68,35 @@
 #![deny(clippy::map_err_ignore)]
 #![deny(clippy::mem_forget)]
 // #![deny(clippy::missing_assert_message)] // coming in 1.70.0
-#![allow(clippy::missing_docs_in_private_items)]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    reason = "Kelvin style guide allows missing_docs_in_private_items"
+)]
 #![deny(clippy::missing_enforced_import_renames)]
-#![allow(clippy::missing_inline_in_public_items)]
+#![allow(
+    clippy::missing_inline_in_public_items,
+    reason = "Kelvin style guide allows missing_inline_in_public_items"
+)]
 #![deny(clippy::missing_trait_methods)]
 #![deny(clippy::mixed_read_write_in_expression)]
 #![deny(clippy::mod_module_files)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::modulo_arithmetic)]
-#![allow(clippy::multiple_crate_versions)]
+#![allow(
+    clippy::module_name_repetitions,
+    reason = "Kelvin style guide decision"
+)]
+#![allow(
+    clippy::modulo_arithmetic,
+    reason = "Kelvin style guide allows modulo_arithmetic"
+)]
+#![allow(
+    clippy::multiple_crate_versions,
+    reason = "Kelvin style guide allows multiple_crate_versions"
+)]
 #![deny(clippy::multiple_inherent_impl)]
-#![allow(clippy::multiple_unsafe_ops_per_block)] // due to: https://github.com/rust-lang/rust-clippy/issues/11312
+#![allow(
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "due to: https://github.com/rust-lang/rust-clippy/issues/11312"
+)]
 #![deny(clippy::mutex_atomic)]
 #![deny(clippy::non_ascii_literal)]
 #![deny(clippy::panic)]
@@ -68,20 +106,35 @@
 #![deny(clippy::print_stderr)]
 #![deny(clippy::print_stdout)]
 #![deny(clippy::pub_use)]
-#![allow(clippy::question_mark_used)]
+#![allow(
+    clippy::question_mark_used,
+    reason = "Kelvin style guide allows question_mark_used"
+)]
 #![deny(clippy::rc_buffer)]
 #![deny(clippy::rc_mutex)]
-#![allow(clippy::redundant_feature_names)]
+#![allow(
+    clippy::redundant_feature_names,
+    reason = "Kelvin style guide allows redundant_feature_names"
+)]
 // #![deny(clippy::ref_patterns)] // coming in 1.70.0
 #![deny(clippy::rest_pat_in_fully_bound_structs)]
 #![deny(clippy::same_name_method)]
-#![allow(clippy::self_named_module_files)]
+#![allow(
+    clippy::self_named_module_files,
+    reason = "Kelvin style guide allows self_named_module_files"
+)]
 #![deny(clippy::semicolon_outside_block)]
-#![allow(clippy::separated_literal_suffix)]
+#![allow(
+    clippy::separated_literal_suffix,
+    reason = "Kelvin style guide allows separated_literal_suffix"
+)]
 #![deny(clippy::shadow_reuse)]
 #![deny(clippy::shadow_same)]
 #![deny(clippy::shadow_unrelated)]
-#![allow(clippy::single_char_lifetime_names)]
+#![allow(
+    clippy::single_char_lifetime_names,
+    reason = "Kelvin style guide allows single_char_lifetime_names"
+)]
 #![deny(clippy::std_instead_of_alloc)]
 #![deny(clippy::std_instead_of_core)]
 #![deny(clippy::str_to_string)]

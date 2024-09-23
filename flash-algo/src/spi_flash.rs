@@ -1,7 +1,6 @@
 use core::future::Future;
 
 /// Errors returned by [`SpiFlash`] implementations
-#[allow(clippy::exhaustive_enums)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq)]
 pub enum SpiFlashError<C> {

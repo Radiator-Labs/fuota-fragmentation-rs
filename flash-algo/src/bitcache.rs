@@ -119,8 +119,10 @@ impl<'a> IntoIterator for &'a BitCache {
     }
 }
 
-// NOTE: We *really* don't want to implement all trait methods for iterator.
-#[allow(clippy::missing_trait_methods)]
+#[allow(
+    clippy::missing_trait_methods,
+    reason = "NOTE: We *really* don't want to implement all trait methods for iterator."
+)]
 impl<'a> Iterator for BitIter<'a> {
     type Item = bool;
 
