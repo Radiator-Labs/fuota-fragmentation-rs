@@ -10,7 +10,8 @@ use rand::{prelude::*, SeedableRng};
 use test_data::{TestCycle, TestRun};
 use test_fuota::{FuotaResponse, TestFuota};
 
-static RAW_FW: &[u8] = include_bytes!("../../flash-algo/test-assets/firmware-001/example.bin");
+static RAW_FW: &[u8] =
+    include_bytes!("../../original-flash-algo/test-assets/firmware-001/example.bin");
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
