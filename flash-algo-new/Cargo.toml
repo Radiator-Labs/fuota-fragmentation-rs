@@ -9,7 +9,7 @@ authors = [
 ]
 readme = "README.md"
 description = "Flash algorithm for the Cozy Motherboard 2023."
-repository = "https://github.com/Radiator-Labs/cozyboard_2023/tree/master/shared-sw-fw/flash-algo"
+repository = "https://github.com/Radiator-Labs/cozyboard_2023/tree/master/shared-sw-fw/flash-algo-new"
 keywords = ["no-std", "embedded", "flash-memory"]
 categories = ["Embedded development", "No standard library"]
 
@@ -31,13 +31,13 @@ defmt = ["dep:defmt"]
 
 [dependencies]
 crc = "3.2.1"
-defmt = { version = "=0.3.6", optional = true }
+defmt = { version = "0.3.8", optional = true }
 bitvec = { version = "1.0.1", default-features = false, features = ["atomic"] }
 parity-reconstruct = { path = "../parity-reconstruct", default-features = false, optional = true }
 
 [dev-dependencies]
-insta = "1.39.0"
-tokio = { version = "1.38.0", features = [
+insta = "1.40.0"
+tokio = { version = "1.41.0", features = [
     "macros",
     "test-util",
     "rt",
