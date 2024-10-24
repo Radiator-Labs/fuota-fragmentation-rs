@@ -56,7 +56,7 @@ pub(crate) fn fragmentation_prbs23(x: u32) -> u32 {
 /// Get the 3rd parity applicability vector
 ///
 /// ```rust
-/// use flash_algo::fragmentation::get_parity_matrix_row;
+/// use original_flash_algo::fragmentation::get_parity_matrix_row;
 /// use bitvec::array::BitArray;
 ///
 /// const M: u32 = 16;
